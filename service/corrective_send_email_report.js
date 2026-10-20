@@ -1,13 +1,12 @@
 /**
  * OWS Service: corrective_send_email_report / emailreport
- * Platform Notice Email Service (Official OWS Notification Engine)
+ * Direct Service: /adc-service/rest/v1/services/System/email/email_send_create
  * 
- * Input Parameters (Body):
- * {
- *   "title": "Judul Email (optional)",
- *   "content": "Isi email format HTML (required)",
- *   "email_to": "andera.singgih.pratama@h-partners.com (optional/comma separated)"
- * }
+ * Schema:
+ * *title    : string (mandatory)
+ * *content  : string (mandatory)
+ * email_to  : string
+ * data_type : string ("text/html;charset=utf-8")
  */
 
 var logger = (typeof JsLogger !== 'undefined' && JsLogger && JsLogger.serviceDebugLogger) 
@@ -15,52 +14,36 @@ var logger = (typeof JsLogger !== 'undefined' && JsLogger && JsLogger.serviceDeb
     : (typeof console !== 'undefined' ? console : null);
 
 // 1. Ekstrak header dan body dari request
-var header = (typeof message !== "undefined" && message && message.header) ? message.header : {};
 var body = (typeof message !== "undefined" && message && message.body) 
     ? message.body 
     : ((typeof input !== "undefined" && input && input.body) ? input.body : (typeof input !== "undefined" ? input : {}));
 
-// Ambil tenantId dari context runtime OWS
-var tenantId = (header && header.commonValues && header.commonValues.currentTenant) 
-    ? header.commonValues.currentTenant 
-    : "default";
-
-var noticeUrl = "/notice:notice/rest/plat/rnsvc/v1/email/action?action-id=forward&userSource=GAM&tenantId=" + tenantId;
-
-// 2. Mapping parameter input
 var todayStr = new Date().toISOString().substring(0, 10);
-var subject = (body.title || body.subject || ("【Report】Corrective Maintenance & Mateline Dashboard - " + todayStr));
-var content = body.content || "<p>No content provided</p>";
-var rawEmail = (body.email_to || body.emails || "andera.singgih.pratama@h-partners.com");
 
-// Parse daftar email (bisa berupa Array atau String dipisah koma/titik koma)
-var emailList = [];
-if (Array.isArray(rawEmail)) {
-    emailList = rawEmail;
-} else if (typeof rawEmail === "string") {
-    var rawSplits = rawEmail.split(/[,;]/);
-    for (var i = 0; i < rawSplits.length; i++) {
-        var em = rawSplits[i].trim();
-        if (em) emailList.push(em);
-    }
-}
-
-// 3. Susun request payload OWS Notice
-var request = {
-    agreeFlag: true,
-    subject: subject,
-    content: content,
-    userInfo: "OWS Email Center",
-    emails: emailList
+// 2. Susun payload persis sesuai schema System/email/email_send_create
+var emailPayload = {
+    // Mandatory (*)
+    title: (body.title || body.subject || ("【Report】Corrective Maintenance & Mateline Dashboard - " + todayStr)),
+    content: body.content || "<p>Dear Team,<br><br>Berikut adalah ringkasan monitoring Mateline Utilization Dashboard.<br>Report ini dibuat secara otomatis dari OWS System.</p>",
+    
+    // Target Receiver
+    email_to: (body.email_to || body.emails || "andera.singgih.pratama@h-partners.com"),
+    data_type: body.data_type || "text/html;charset=utf-8"
 };
 
-// 4. Eksekusi via ServiceInvoker
-var response = ServiceInvoker.invoke(noticeUrl, request);
+// Optional fields - hanya sertakan jika ada nilainya
+if (body.email_cc) emailPayload.email_cc = String(body.email_cc).trim();
+if (body.email_bcc) emailPayload.email_bcc = String(body.email_bcc).trim();
+if (body.email_from) emailPayload.email_from = String(body.email_from).trim();
+if (body.server_id) emailPayload.server_id = parseInt(body.server_id, 10);
+if (body.attachment) emailPayload.attachment = body.attachment;
+
+// 3. Eksekusi langsung ke endpoint System/email/email_send_create
+var serviceUrl = "/adc-service/rest/v1/services/System/email/email_send_create";
+var result = ServiceInvoker.post(serviceUrl, emailPayload);
 
 if (logger && logger.info) {
-    logger.info("OWS Notice email response=" + JSON.stringify(response));
+    logger.info("email_send_create response=" + JSON.stringify(result));
 }
 
-return response;
-
-
+return result;
