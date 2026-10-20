@@ -1,955 +1,841 @@
 /**
  * OWS Service: corrective_send_email_report / emailreport
  * Direct Service: /adc-service/rest/v1/services/System/email/email_send_create
- * 
- * Auto D-1 Daily Report Generator (Mateline Utilization & Corrective Maintenance)
- * 100% Identical Visual Replica of the Dashboard UI (Dark Slate Theme #09090b / #0d0d10)
- * 
- * Includes 10 Components matching the actual live dashboard:
- * 1. Header Banner & Live Status Ticker (Tuesday, 20 October 2026 / D-1)
- * 2. Filter Breadcrumb Badge: "Active: 1 Oktober 2026 – 19 Oktober 2026 | Region: All Region | Party: All Party"
- * 3. 3-Column Top Grid:
- *    - Ticket Summary (Total Tickets 295, Total Accepted 89, Acceptance Rate Bar 30.2%)
- *    - Accepted Ticket Distribution by Party (Donut Ring Chart with Legend: Telkom Akses, Persada, Mandau)
- *    - FME Ticket Acceptance Detail (Table with FME Party, Total FME, Ticket Count, Accepted Count, Accept Rate %)
- * 4. Accept Rate by Party Cards Row (Telkom Akses - D-1 0.0%, Persada - D-1 50.0%, Mandau - D-1 0.0%)
- * 5. Mateline Utilization Trend (Bar Chart + Curve Line + Table Breakdown across dates)
- * 6. Daily Accept Rate by Party (Multi-Bar Chart + Curve Line + Daily Matrix Table)
- * 7. Milestone Utilization Dashboard (5 Metric Cards: Total Ticket, Accepted, Depart, Arrive, Leave)
- * 8. 1 Day - Hourly Timeline (24h Multi-Line Chart & 2-Hourly Matrix Table 00:00 - 22:00)
- * 9. Cluster Office Milestone Summary Table
- * 10. FME Performance Detail Table
+ *
+ * Daily D-1 Report - Mateline Utilization (replika dashboard OWS, dark theme).
+ * Semua angka berasal dari service corrective_dashboard_summary_get (tanpa data dummy).
+ *
+ * Input (opsional): { email_to, date: "YYYY-MM-DD" (default D-1), start_date, end_date, title }
+ *
+ * Urutan section (sama dengan dashboard):
+ *  1. Header + Report Date (D-1) + Active filter badge
+ *  2. Ticket Summary | Accepted Ticket Distribution (donut) | FME Ticket Acceptance Detail
+ *  3. Accept Rate by Party (D-1)
+ *  4. Mateline Utilization Trend (chart + tabel)
+ *  5. Daily Accept Rate by Party (chart + tabel)
+ *  6. Milestone Utilization (5 cards D-1)
+ *  7. 1 Day - Hourly Timeline (chart + tabel)
+ *  8. Date Range Timeline (chart)
+ *  9. Cluster Office Milestone Summary
+ * 10. FME Performance Detail (semua teknisi)
+ *
+ * Catatan: JavaScript ES5 saja (runtime OWS).
  */
 
-var logger = (typeof JsLogger !== 'undefined' && JsLogger && JsLogger.serviceDebugLogger) 
-    ? JsLogger.serviceDebugLogger 
+var logger = (typeof JsLogger !== 'undefined' && JsLogger && JsLogger.serviceDebugLogger)
+    ? JsLogger.serviceDebugLogger
     : (typeof console !== 'undefined' ? console : null);
 
-// 1. Ekstrak request
-var body = (typeof message !== "undefined" && message && message.body) 
-    ? message.body 
-    : ((typeof input !== "undefined" && input && input.body) ? input.body : (typeof input !== "undefined" ? input : {}));
+function logInfo(msg) { if (logger && logger.info) logger.info(msg); }
+function logError(msg) { if (logger && logger.error) logger.error(msg); }
 
+// ======================================================================
+// 0. KONSTANTA
+// ======================================================================
+var SUMMARY_SERVICE = "/adc-service/rest/v1/services/gde_dashboard/corrective_maintenance_dashboard/corrective_dashboard_summary_get";
+var EMAIL_SERVICE = "/adc-service/rest/v1/services/System/email/email_send_create";
 var DEFAULT_RECEIVER = "anderasinggih1@gmail.com";
-var sendTo = (body.email_to || body.send_to || body.sendto || body.emails || DEFAULT_RECEIVER);
 
-// 2. Hitung Rentang Tanggal: Default Bulan Aktif s/d Kemarin (D-1) seperti dashboard
-function getJakartaDateParts() {
-    var nowJakarta = new Date(new Date().getTime() + (7 * 60 * 60 * 1000));
-    var d1 = new Date(nowJakarta.getTime() - (24 * 60 * 60 * 1000));
-    var yyyy = d1.getUTCFullYear();
-    var mm = ("0" + (d1.getUTCMonth() + 1)).slice(-2);
-    var dd = ("0" + d1.getUTCDate()).slice(-2);
-    
-    var days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    var dayName = days[nowJakarta.getUTCDay()];
-    var monthName = months[nowJakarta.getUTCMonth()];
-    
-    var hh = ("0" + nowJakarta.getUTCHours()).slice(-2);
-    var min = ("0" + nowJakarta.getUTCMinutes()).slice(-2);
-    var ss = ("0" + nowJakarta.getUTCSeconds()).slice(-2);
+var PARTIES = ['Telkom Akses', 'Persada', 'Mandau'];
+var PARTY_COLORS = { 'Telkom Akses': '#c8102e', 'Persada': '#31b5c6', 'Mandau': '#62b230' };
+var DONUT_COLORS = ['#5470c6', '#91cc75', '#fac858'];
 
-    var todayYyyy = nowJakarta.getUTCFullYear();
-    var todayMm = ("0" + (nowJakarta.getUTCMonth() + 1)).slice(-2);
-    var todayDd = ("0" + nowJakarta.getUTCDate()).slice(-2);
-
-    return {
-        todayStr: todayYyyy + "-" + todayMm + "-" + todayDd,
-        dayName: dayName,
-        d1Str: yyyy + "-" + mm + "-" + dd,
-        monthStartStr: yyyy + "-" + mm + "-01",
-        year: yyyy,
-        month: mm,
-        day: dd,
-        fullTimestamp: dayName + ", " + nowJakarta.getUTCDate() + " " + monthName + " " + yyyy + " — " + hh + ":" + min + ":" + ss
-    };
-}
-
-var jParts = getJakartaDateParts();
-var targetDate = (body.date && String(body.date).trim()) ? String(body.date).trim() : jParts.d1Str;
-var startDateRange = (body.start_date && String(body.start_date).trim()) ? String(body.start_date).trim() : jParts.monthStartStr;
-var endDateRange = (body.end_date && String(body.end_date).trim()) ? String(body.end_date).trim() : targetDate;
-
-// 3. Ambil Data Aktual dari service corrective_dashboard_summary_get
-var summaryRes = null;
-try {
-    summaryRes = ServiceInvoker.post(
-        "/adc-service/rest/v1/services/gde_dashboard/corrective_maintenance_dashboard/corrective_dashboard_summary_get",
-        {
-            "start_date": startDateRange,
-            "end_date": endDateRange,
-            "start": 0,
-            "limit": 10000
-        }
-    );
-} catch (e) {
-    if (logger && logger.error) logger.error("Failed fetching summary data: " + e.message);
-}
-
-// 4. Ekstrak Data Response
-var resultObj = (summaryRes && summaryRes.result) ? summaryRes.result : {};
-var rawTickets = (resultObj.data_grid && Array.isArray(resultObj.data_grid.rows)) ? resultObj.data_grid.rows : [];
-var chartsData = resultObj.charts || {};
-var dailyAcceptRates = Array.isArray(chartsData.accept_rate_daily) ? chartsData.accept_rate_daily : [];
-var fmeManagementRows = (resultObj.fme_management && Array.isArray(resultObj.fme_management.rows)) ? resultObj.fme_management.rows : [];
-var fmeStatusRows = (resultObj.fme_status && Array.isArray(resultObj.fme_status.rows)) ? resultObj.fme_status.rows : [];
-
-// Filter tiket khusus D-1 untuk Ticket Summary & Milestone Cards D-1
-var d1Tickets = [];
-var rangeTotalTickets = rawTickets.length;
-
-for (var k = 0; k < rawTickets.length; k++) {
-    var tk = rawTickets[k];
-    if (!tk) continue;
-    var tkDate = "";
-    if (tk.keycode && tk.keycode.length >= 12) {
-        var rawK = tk.keycode.substring(3, 11);
-        if (/^\d{8}$/.test(rawK)) {
-            tkDate = rawK.substring(0, 4) + "-" + rawK.substring(4, 6) + "-" + rawK.substring(6, 8);
-        }
-    }
-    if (!tkDate && tk.createtime) {
-        tkDate = tk.createtime.substring(0, 10);
-    }
-    if (tkDate === targetDate) {
-        d1Tickets.push(tk);
-    }
-}
-
-// Jika dataset khusus D-1 kosong, gunakan seluruh rawTickets
-var activeSnapshotTickets = d1Tickets.length > 0 ? d1Tickets : rawTickets;
-var totalTicketsD1 = activeSnapshotTickets.length;
-
-// Hitung Milestone D-1
-var countAcceptedD1 = 0;
-var countDepartD1 = 0;
-var countArriveD1 = 0;
-var countLeaveD1 = 0;
-
-var CM_PARTY_ORDER = ['Telkom Akses', 'Persada', 'Mandau'];
-var partyD1 = {
-    'Telkom Akses': { total: 0, accepted: 0 },
-    'Persada': { total: 0, accepted: 0 },
-    'Mandau': { total: 0, accepted: 0 }
+var C = {
+    bg: '#09090b',
+    card: '#0d0d10',
+    border: '#27272a',
+    rowLine: '#1f1f23',
+    head: '#18181b',
+    text: '#fafafa',
+    sub: '#a1a1aa',
+    muted: '#8b949e',
+    blue: '#3b82f6',
+    orange: '#f97316',
+    pink: '#ec4899',
+    green: '#34d399'
 };
 
-var clusterMap = {};
-var fmeDetailMap = {};
+var DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+var MONTH_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+var MONTH_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-// Hourly Matrix 00:00 - 23:00 untuk D-1
-var hourly = [];
-for (var h = 0; h < 24; h++) {
-    hourly.push({ hour: (h < 10 ? '0' + h : '' + h), total: 0, accepted: 0, depart: 0, arrive: 0, leave: 0 });
+// ======================================================================
+// 1. HELPER TANGGAL (semua dalam GMT+7 / Jakarta)
+// ======================================================================
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+function parseYmd(s) {
+    var p = String(s).split('-');
+    return new Date(Date.UTC(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10)));
+}
+function fmtYmd(d) { return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()); }
+function addDays(s, n) {
+    var d = parseYmd(s);
+    d.setUTCDate(d.getUTCDate() + n);
+    return fmtYmd(d);
+}
+function dateList(startStr, endStr) {
+    var list = [];
+    var cur = startStr;
+    var guard = 0;
+    while (cur <= endStr && guard < 400) {
+        list.push(cur);
+        cur = addDays(cur, 1);
+        guard++;
+    }
+    return list;
+}
+function dayNameOf(s) { return DAY_NAMES[parseYmd(s).getUTCDay()]; }
+function longDateEn(s) {
+    var d = parseYmd(s);
+    return dayNameOf(s) + ', ' + d.getUTCDate() + ' ' + MONTH_EN[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+}
+function longDateId(s) {
+    var d = parseYmd(s);
+    return d.getUTCDate() + ' ' + MONTH_ID[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+}
+function shortDate(s) { return String(s).substring(5); }
+function esc(v) {
+    return String(v === null || typeof v === 'undefined' ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function num(v) {
+    var n = parseFloat(v);
+    return isNaN(n) ? 0 : n;
+}
+function pct(a, b, digits) {
+    return b > 0 ? ((a / b) * 100).toFixed(digits) : (0).toFixed(digits);
 }
 
-for (var i = 0; i < activeSnapshotTickets.length; i++) {
-    var t = activeSnapshotTickets[i];
+var nowJakarta = new Date(new Date().getTime() + (7 * 60 * 60 * 1000));
+var todayStr = fmtYmd(nowJakarta);
+var d1Default = addDays(todayStr, -1);
+
+// ======================================================================
+// 2. REQUEST
+// ======================================================================
+var body = (typeof message !== "undefined" && message && message.body)
+    ? message.body
+    : ((typeof input !== "undefined" && input && input.body) ? input.body : (typeof input !== "undefined" && input ? input : {}));
+
+function pick(v, fallback) { return (v && String(v).trim()) ? String(v).trim() : fallback; }
+
+var sendTo = pick(body.email_to || body.send_to || body.sendto || body.emails, DEFAULT_RECEIVER);
+var targetDate = pick(body.date, d1Default);                       // tanggal laporan (D-1)
+var endDateRange = pick(body.end_date, targetDate);
+var startDateRange = pick(body.start_date, targetDate.substring(0, 8) + '01');   // tgl 1 bulan berjalan
+
+// ======================================================================
+// 3. AMBIL DATA RIIL
+// ======================================================================
+function fetchSummary(startDate, endDate) {
+    var res = ServiceInvoker.post(SUMMARY_SERVICE, {
+        "start_date": startDate,
+        "end_date": endDate,
+        "start": 0,
+        "limit": 10000
+    });
+    return (res && res.result) ? res.result : null;
+}
+
+var d1Result = null;
+var rangeResult = null;
+try {
+    d1Result = fetchSummary(targetDate, targetDate);          // snapshot D-1
+    rangeResult = (startDateRange === targetDate && endDateRange === targetDate)
+        ? d1Result
+        : fetchSummary(startDateRange, endDateRange);          // trend & range timeline
+} catch (e) {
+    logError("Failed fetching summary data: " + e.message);
+    return { success: false, error: "Failed fetching dashboard data: " + e.message };
+}
+
+if (!d1Result || !rangeResult) {
+    return { success: false, error: "Dashboard summary service returned no result. Email not sent." };
+}
+
+function rowsOf(obj, key) {
+    return (obj && obj[key] && Array.isArray(obj[key].rows)) ? obj[key].rows : [];
+}
+
+var d1Tickets = rowsOf(d1Result, 'data_grid');
+var rangeTickets = rowsOf(rangeResult, 'data_grid');
+var fmeMgmtRows = rowsOf(d1Result, 'fme_management');
+var dailyRows = (rangeResult.charts && Array.isArray(rangeResult.charts.accept_rate_daily))
+    ? rangeResult.charts.accept_rate_daily : [];
+
+// ======================================================================
+// 4. OLAH DATA
+// ======================================================================
+function isLeave(t) {
+    return !!(t.complete_time || t.exit_time || t.current_phase === 'leave' || t.out_in === 'exit');
+}
+function hourOf(ts) {
+    if (!ts || String(ts).length < 13) return -1;
+    var h = parseInt(String(ts).substring(11, 13), 10);
+    return (isNaN(h) || h < 0 || h > 23) ? -1 : h;
+}
+
+// --- 4a. Daily accept rate per tanggal & party (dari accept_rate_daily, tanpa lubang tanggal)
+var trendDates = dateList(startDateRange, endDateRange);
+var dailyMap = {};
+var di, pi;
+for (di = 0; di < trendDates.length; di++) {
+    dailyMap[trendDates[di]] = { total: 0, accepted: 0, parties: {} };
+    for (pi = 0; pi < PARTIES.length; pi++) {
+        dailyMap[trendDates[di]].parties[PARTIES[pi]] = { total: 0, accepted: 0 };
+    }
+}
+for (di = 0; di < dailyRows.length; di++) {
+    var dr = dailyRows[di];
+    var drDate = dr.ticket_date;
+    var drParty = dr.party_name;
+    if (!dailyMap[drDate] || !dailyMap[drDate].parties[drParty]) continue;
+    var drTotal = num(dr.count_ticket_id);
+    var drAcc = num(dr.count_accept_time);
+    dailyMap[drDate].total += drTotal;
+    dailyMap[drDate].accepted += drAcc;
+    dailyMap[drDate].parties[drParty].total += drTotal;
+    dailyMap[drDate].parties[drParty].accepted += drAcc;
+}
+
+var trendTotals = [], trendAccepted = [], trendRates = [], trendOverall = [];
+var partyRateSeries = {};
+var partySumTotal = {}, partySumAccepted = {};
+for (pi = 0; pi < PARTIES.length; pi++) {
+    partyRateSeries[PARTIES[pi]] = [];
+    partySumTotal[PARTIES[pi]] = 0;
+    partySumAccepted[PARTIES[pi]] = 0;
+}
+var grandTotal = 0, grandAccepted = 0;
+for (di = 0; di < trendDates.length; di++) {
+    var dm = dailyMap[trendDates[di]];
+    grandTotal += dm.total;
+    grandAccepted += dm.accepted;
+    trendTotals.push(dm.total);
+    trendAccepted.push(dm.accepted);
+    var rateDay = Number(pct(dm.accepted, dm.total, 2));
+    trendRates.push(rateDay);
+    trendOverall.push(rateDay);
+    for (pi = 0; pi < PARTIES.length; pi++) {
+        var pp = dm.parties[PARTIES[pi]];
+        partySumTotal[PARTIES[pi]] += pp.total;
+        partySumAccepted[PARTIES[pi]] += pp.accepted;
+        partyRateSeries[PARTIES[pi]].push(Number(pct(pp.accepted, pp.total, 2)));
+    }
+}
+
+// --- 4b. Snapshot D-1 (Ticket Summary, Accept Rate by Party, Donut)
+var d1Daily = dailyMap[targetDate] || { total: 0, accepted: 0, parties: {} };
+for (pi = 0; pi < PARTIES.length; pi++) {
+    if (!d1Daily.parties[PARTIES[pi]]) d1Daily.parties[PARTIES[pi]] = { total: 0, accepted: 0 };
+}
+var d1Total = d1Daily.total;
+var d1Accepted = d1Daily.accepted;
+var d1Rate = pct(d1Accepted, d1Total, 1);
+
+// --- 4c. FME Ticket Acceptance Detail (fme_management D-1)
+var fmeParty = {};
+for (pi = 0; pi < PARTIES.length; pi++) {
+    fmeParty[PARTIES[pi]] = { totalFme: 0, tickets: 0, accepted: 0 };
+}
+for (di = 0; di < fmeMgmtRows.length; di++) {
+    var fr = fmeMgmtRows[di];
+    if (!fmeParty[fr.party_name]) continue;
+    fmeParty[fr.party_name].totalFme++;
+    fmeParty[fr.party_name].tickets += num(fr.count_ticket_id);
+    fmeParty[fr.party_name].accepted += num(fr.count_accept_time);
+}
+
+// --- 4d. Milestone D-1, hourly, cluster, FME detail (dari tiket D-1)
+var ms = { total: d1Tickets.length, accepted: 0, depart: 0, arrive: 0, leave: 0 };
+var hourly = [];
+var hh;
+for (hh = 0; hh < 24; hh++) hourly.push({ total: 0, accepted: 0, depart: 0, arrive: 0, leave: 0 });
+
+var clusterMap = {};
+var fmeMap = {};
+var ti;
+for (ti = 0; ti < d1Tickets.length; ti++) {
+    var t = d1Tickets[ti];
     if (!t) continue;
 
-    var isAcc = !!(t.accept_time);
-    var isDep = !!(t.depart_time);
-    var isArr = !!(t.arrive_time);
-    var isLev = !!(t.complete_time || t.exit_time || t.current_phase === 'leave' || t.out_in === 'exit');
+    var acc = !!t.accept_time, dep = !!t.depart_time, arr = !!t.arrive_time, lev = isLeave(t);
+    if (acc) ms.accepted++;
+    if (dep) ms.depart++;
+    if (arr) ms.arrive++;
+    if (lev) ms.leave++;
 
-    if (isAcc) countAcceptedD1++;
-    if (isDep) countDepartD1++;
-    if (isArr) countArriveD1++;
-    if (isLev) countLeaveD1++;
-
-    // Hourly distribution
-    if (t.createtime && t.createtime.length >= 13) {
-        var hTot = parseInt(t.createtime.substring(11, 13), 10);
-        if (!isNaN(hTot) && hTot >= 0 && hTot < 24) hourly[hTot].total++;
-    }
-    if (t.accept_time && t.accept_time.length >= 13) {
-        var hAcc = parseInt(t.accept_time.substring(11, 13), 10);
-        if (!isNaN(hAcc) && hAcc >= 0 && hAcc < 24) hourly[hAcc].accepted++;
-    }
-    if (t.depart_time && t.depart_time.length >= 13) {
-        var hDep = parseInt(t.depart_time.substring(11, 13), 10);
-        if (!isNaN(hDep) && hDep >= 0 && hDep < 24) hourly[hDep].depart++;
-    }
-    if (t.arrive_time && t.arrive_time.length >= 13) {
-        var hArr = parseInt(t.arrive_time.substring(11, 13), 10);
-        if (!isNaN(hArr) && hArr >= 0 && hArr < 24) hourly[hArr].arrive++;
-    }
-    var lTime = t.complete_time || t.exit_time || (t.current_phase === 'leave' ? t.lastupdatetime : null);
-    if (lTime && lTime.length >= 13) {
-        var hLev = parseInt(lTime.substring(11, 13), 10);
-        if (!isNaN(hLev) && hLev >= 0 && hLev < 24) hourly[hLev].leave++;
+    // Hourly: sama dengan dashboard -> hanya tiket yang createtime-nya D-1
+    if (t.createtime && String(t.createtime).substring(0, 10) === targetDate) {
+        var hc = hourOf(t.createtime);
+        if (hc >= 0) hourly[hc].total++;
+        var ha = hourOf(t.accept_time);
+        if (ha >= 0) hourly[ha].accepted++;
+        var hd = hourOf(t.depart_time);
+        if (hd >= 0) hourly[hd].depart++;
+        var hr = hourOf(t.arrive_time);
+        if (hr >= 0) hourly[hr].arrive++;
+        var hl = hourOf(t.complete_time || t.exit_time || (t.current_phase === 'leave' ? t.lastupdatetime : null));
+        if (hl >= 0) hourly[hl].leave++;
     }
 
-    // Party D-1
-    var cName = String(t.contractor_name || t.party_name || '').trim();
-    for (var p = 0; p < CM_PARTY_ORDER.length; p++) {
-        if (cName.toLowerCase().indexOf(CM_PARTY_ORDER[p].toLowerCase()) !== -1) {
-            partyD1[CM_PARTY_ORDER[p]].total++;
-            if (isAcc) partyD1[CM_PARTY_ORDER[p]].accepted++;
-            break;
-        }
-    }
+    var cluster = String(t.fme_fm_office_name || t.fm_office || 'Unassigned').trim() || 'Unassigned';
+    if (!clusterMap[cluster]) clusterMap[cluster] = { name: cluster, total: 0, accepted: 0, depart: 0, arrive: 0, leave: 0 };
+    clusterMap[cluster].total++;
+    if (acc) clusterMap[cluster].accepted++;
+    if (dep) clusterMap[cluster].depart++;
+    if (arr) clusterMap[cluster].arrive++;
+    if (lev) clusterMap[cluster].leave++;
 
-    // Cluster Office
-    var clusterName = String(t.fme_fm_office_name || t.fm_office || 'Unassigned').trim();
-    if (!clusterName) clusterName = 'Unassigned';
-    if (!clusterMap[clusterName]) {
-        clusterMap[clusterName] = { cluster: clusterName, total: 0, accepted: 0, depart: 0, arrive: 0, leave: 0 };
-    }
-    clusterMap[clusterName].total++;
-    if (isAcc) clusterMap[clusterName].accepted++;
-    if (isDep) clusterMap[clusterName].depart++;
-    if (isArr) clusterMap[clusterName].arrive++;
-    if (isLev) clusterMap[clusterName].leave++;
-
-    // FME Detail
-    var fmeName = String(t.fme_fullname || t.assign_to_fme || 'Unassigned').trim();
-    if (fmeName && fmeName !== 'Unassigned') {
-        var fKey = clusterName + '___' + fmeName;
-        if (!fmeDetailMap[fKey]) {
-            fmeDetailMap[fKey] = { cluster: clusterName, fmeName: fmeName, total: 0, accepted: 0, depart: 0, arrive: 0, leave: 0 };
-        }
-        fmeDetailMap[fKey].total++;
-        if (isAcc) fmeDetailMap[fKey].accepted++;
-        if (isDep) fmeDetailMap[fKey].depart++;
-        if (isArr) fmeDetailMap[fKey].arrive++;
-        if (isLev) fmeDetailMap[fKey].leave++;
+    var fmeName = String(t.fme_fullname || t.assign_to_fme || '').trim();
+    if (fmeName) {
+        var fk = cluster + '___' + fmeName;
+        if (!fmeMap[fk]) fmeMap[fk] = { cluster: cluster, name: fmeName, accepted: 0, depart: 0, arrive: 0, leave: 0 };
+        if (acc) fmeMap[fk].accepted++;
+        if (dep) fmeMap[fk].depart++;
+        if (arr) fmeMap[fk].arrive++;
+        if (lev) fmeMap[fk].leave++;
     }
 }
 
-// Percentages D-1
-var acceptRateD1 = totalTicketsD1 > 0 ? ((countAcceptedD1 / totalTicketsD1) * 100).toFixed(1) : "0.0";
-var acceptedPctD1 = totalTicketsD1 > 0 ? Math.round((countAcceptedD1 / totalTicketsD1) * 100) : 0;
-var departPctD1 = totalTicketsD1 > 0 ? Math.round((countDepartD1 / totalTicketsD1) * 100) : 0;
-var arrivePctD1 = totalTicketsD1 > 0 ? Math.round((countArriveD1 / totalTicketsD1) * 100) : 0;
-var leavePctD1 = totalTicketsD1 > 0 ? Math.round((countLeaveD1 / totalTicketsD1) * 100) : 0;
-
-// Milestone Total All Time / Active Range (seperti Image 5: 4889 Total, 2148 Accepted, 144 Depart, 91 Arrive, 2069 Leave)
-var rangeAccepted = 0, rangeDepart = 0, rangeArrive = 0, rangeLeave = 0;
-for (var ri = 0; ri < rawTickets.length; ri++) {
-    var rtk = rawTickets[ri];
-    if (!rtk) continue;
-    if (rtk.accept_time) rangeAccepted++;
-    if (rtk.depart_time) rangeDepart++;
-    if (rtk.arrive_time) rangeArrive++;
-    if (rtk.complete_time || rtk.exit_time || rtk.current_phase === 'leave' || rtk.out_in === 'exit') rangeLeave++;
-}
-var rangeAcceptedPct = rangeTotalTickets > 0 ? Math.round((rangeAccepted / rangeTotalTickets) * 100) : 0;
-var rangeDepartPct = rangeTotalTickets > 0 ? Math.round((rangeDepart / rangeTotalTickets) * 100) : 0;
-var rangeArrivePct = rangeTotalTickets > 0 ? Math.round((rangeArrive / rangeTotalTickets) * 100) : 0;
-var rangeLeavePct = rangeTotalTickets > 0 ? Math.round((rangeLeave / rangeTotalTickets) * 100) : 0;
-
-// FME Ticket Acceptance Detail (Tabel FME Party - 100% Dynamic dari API)
-var fmePartySummary = {};
-for (var cp = 0; cp < CM_PARTY_ORDER.length; cp++) {
-    fmePartySummary[CM_PARTY_ORDER[cp]] = {
-        totalFme: 0,
-        ticketCount: 0,
-        acceptedCount: 0,
-        acceptRate: '0.00'
-    };
-}
-
-for (var fm = 0; fm < fmeManagementRows.length; fm++) {
-    var mRow = fmeManagementRows[fm];
-    var mp = mRow.party_name;
-    if (fmePartySummary[mp]) {
-        fmePartySummary[mp].totalFme++;
-        fmePartySummary[mp].ticketCount += parseInt(mRow.count_ticket_id || 0, 10);
-        fmePartySummary[mp].acceptedCount += parseInt(mRow.count_accept_time || 0, 10);
-    }
-}
-
-for (var pKey in fmePartySummary) {
-    var pObj = fmePartySummary[pKey];
-    if (pObj.totalFme === 0 && fmeStatusRows.length > 0) {
-        for (var fs = 0; fs < fmeStatusRows.length; fs++) {
-            if (fmeStatusRows[fs].party_name === pKey) pObj.totalFme++;
-        }
-    }
-    if (pObj.ticketCount === 0 && partyD1[pKey]) {
-        pObj.ticketCount = partyD1[pKey].total;
-        pObj.acceptedCount = partyD1[pKey].accepted;
-    }
-    pObj.acceptRate = pObj.ticketCount > 0 ? ((pObj.acceptedCount / pObj.ticketCount) * 100).toFixed(2) : "0.00";
-}
-
-// Cluster list sort
 var clusterList = [];
-for (var ck in clusterMap) clusterList.push(clusterMap[ck]);
-clusterList.sort(function(a, b) { return b.total - a.total; });
+var key;
+for (key in clusterMap) clusterList.push(clusterMap[key]);
+clusterList.sort(function (a, b) { return b.total - a.total; });
 
-// FME detail list sort
-var fmeDetailList = [];
-for (var fk in fmeDetailMap) fmeDetailList.push(fmeDetailMap[fk]);
-fmeDetailList.sort(function(a, b) {
-    if (a.cluster === b.cluster) return b.accepted - a.accepted;
+var fmeList = [];
+for (key in fmeMap) fmeList.push(fmeMap[key]);
+fmeList.sort(function (a, b) {
+    if (a.cluster === b.cluster) {
+        if (b.accepted !== a.accepted) return b.accepted - a.accepted;
+        return a.name.localeCompare(b.name);
+    }
     return a.cluster.localeCompare(b.cluster);
 });
 
-// Daily Trend Aggregation
-var dailyDatesMap = {};
-for (var dr = 0; dr < dailyAcceptRates.length; dr++) {
-    var item = dailyAcceptRates[dr];
-    var dStr = item.ticket_date;
-    if (!dStr) continue;
-    if (!dailyDatesMap[dStr]) {
-        dailyDatesMap[dStr] = { date: dStr, total: 0, accepted: 0, parties: {} };
-    }
-    dailyDatesMap[dStr].total += parseInt(item.count_ticket_id || 0, 10);
-    dailyDatesMap[dStr].accepted += parseInt(item.count_accept_time || 0, 10);
-    dailyDatesMap[dStr].parties[item.party_name] = {
-        total: parseInt(item.count_ticket_id || 0, 10),
-        accepted: parseInt(item.count_accept_time || 0, 10)
-    };
+// --- 4e. Date Range Timeline (milestone per tanggal kejadian, seluruh range)
+var rangeMap = {};
+for (di = 0; di < trendDates.length; di++) {
+    rangeMap[trendDates[di]] = { total: 0, accepted: 0, depart: 0, arrive: 0, leave: 0 };
+}
+function bump(ts, field) {
+    if (!ts) return;
+    var d = String(ts).substring(0, 10);
+    if (rangeMap[d]) rangeMap[d][field]++;
+}
+for (ti = 0; ti < rangeTickets.length; ti++) {
+    var rt = rangeTickets[ti];
+    if (!rt) continue;
+    bump(rt.createtime, 'total');
+    bump(rt.accept_time, 'accepted');
+    bump(rt.depart_time, 'depart');
+    bump(rt.arrive_time, 'arrive');
+    bump(rt.complete_time || rt.exit_time, 'leave');
 }
 
-var sortedDailyDates = Object.keys(dailyDatesMap).sort();
-var trendDates = sortedDailyDates.length > 0 ? sortedDailyDates : [targetDate];
-
-// 5. MEMBUAT QUICKCHART URL UNTUK SELURUH CHART ASLI DASHBOARD
-// ---------------------------------------------------------------
-// A. Donut Chart: Accepted Ticket Distribution by Party
-var taAcc = fmePartySummary['Telkom Akses'].acceptedCount;
-var perAcc = fmePartySummary['Persada'].acceptedCount;
-var manAcc = fmePartySummary['Mandau'].acceptedCount;
-var donutConfig = {
-    type: "doughnut",
-    data: {
-        labels: ["Telkom Akses", "Persada", "Mandau"],
-        datasets: [{
-            data: [taAcc, perAcc, manAcc],
-            backgroundColor: ["#5470c6", "#91cc75", "#fac858"],
-            borderWidth: 0
-        }]
-    },
-    options: {
-        cutoutPercentage: 65,
-        legend: {
-            position: "right",
-            labels: { fontColor: "#c9d1d9", fontSize: 11, boxWidth: 12 }
-        }
-    }
+// ======================================================================
+// 5. CHART (QuickChart, Chart.js v2) - gaya 1:1 dengan ECharts dashboard
+// ======================================================================
+var GRADIENTS = {
+    ORANGE: "getGradientFillHelper('vertical',['rgba(240,136,62,0.35)','rgba(240,136,62,0.03)'])",
+    WHITE: "getGradientFillHelper('vertical',['rgba(255,255,255,0.12)','rgba(255,255,255,0)'])",
+    BLUE: "getGradientFillHelper('vertical',['rgba(59,130,246,0.25)','rgba(59,130,246,0)'])",
+    ORANGE2: "getGradientFillHelper('vertical',['rgba(249,115,22,0.25)','rgba(249,115,22,0)'])",
+    PINK: "getGradientFillHelper('vertical',['rgba(236,72,153,0.25)','rgba(236,72,153,0)'])",
+    GREEN: "getGradientFillHelper('vertical',['rgba(52,211,153,0.25)','rgba(52,211,153,0)'])"
 };
-var donutChartUrl = "https://quickchart.io/chart?w=320&h=200&bkg=%230d0d10&c=" + encodeURIComponent(JSON.stringify(donutConfig));
+var FUNCTIONS = {
+    PCT: "function(v){return v+'%';}",
+    PCT1: "function(v){return Number(v||0).toFixed(1)+'%';}",
+    PCT2: "function(v){return Number(v||0).toFixed(2)+'%';}"
+};
 
-// B. Mateline Utilization Trend Chart (Dual Axis Combo Bar & Line)
-var trendLabels = [];
-var trendTotalTickets = [];
-var trendAcceptedTickets = [];
-var trendAcceptRates = [];
-
-for (var td = 0; td < trendDates.length; td++) {
-    var tDate = trendDates[td];
-    var tItem = dailyDatesMap[tDate];
-    trendLabels.push(tDate.substring(5)); // '10-01'
-    trendTotalTickets.push(tItem.total);
-    trendAcceptedTickets.push(tItem.accepted);
-    var tRate = tItem.total > 0 ? Number(((tItem.accepted / tItem.total) * 100).toFixed(1)) : 0;
-    trendAcceptRates.push(tRate);
+function chartUrl(config, width, height) {
+    var s = JSON.stringify(config);
+    s = s.replace(/"__G_([A-Z0-9]+)__"/g, function (m, k) { return GRADIENTS[k]; });
+    s = s.replace(/"__F_([A-Z0-9]+)__"/g, function (m, k) { return FUNCTIONS[k]; });
+    return "https://quickchart.io/chart?v=2.9.4&w=" + width + "&h=" + height +
+        "&devicePixelRatio=2&bkg=" + encodeURIComponent(C.card) +
+        "&c=" + encodeURIComponent(s);
 }
 
-var trendChartConfig = {
-    type: "bar",
+function imgTag(url, width, height, alt) {
+    return '<img src="' + url + '" width="' + width + '" height="' + height + '" alt="' + esc(alt) +
+        '" style="display:block; width:100%; max-width:' + width + 'px; height:auto; border:0;" />';
+}
+
+var axisFont = '#8b949e';
+var gridColor = '#30363d';
+var CHART_W = 832;
+
+function axisX(size) {
+    return [{ ticks: { fontColor: axisFont, fontSize: size || 10 }, gridLines: { color: gridColor, display: false } }];
+}
+function titleCfg(text) {
+    return { display: true, text: text, fontColor: '#c9d1d9', fontSize: 18, fontStyle: 'bold', padding: 14 };
+}
+var legendCfg = { position: 'bottom', labels: { fontColor: '#c9d1d9', fontSize: 12, boxWidth: 14, padding: 14 } };
+
+function barLabel(color, size) {
+    return { anchor: 'end', align: 'end', color: color || '#c9d1d9', font: { size: size || 8 } };
+}
+
+// A. Donut
+var donutValues = [];
+for (pi = 0; pi < PARTIES.length; pi++) donutValues.push(d1Daily.parties[PARTIES[pi]].accepted);
+var donutHasData = (donutValues[0] + donutValues[1] + donutValues[2]) > 0;
+var donutUrl = chartUrl({
+    type: 'doughnut',
+    data: { labels: PARTIES, datasets: [{ data: donutValues, backgroundColor: DONUT_COLORS, borderWidth: 0 }] },
+    options: {
+        cutoutPercentage: 68,
+        legend: { position: 'right', labels: { fontColor: '#c9d1d9', fontSize: 13, boxWidth: 14, padding: 12 } },
+        plugins: { datalabels: { display: false } }
+    }
+}, 300, 200);
+
+// B. Mateline Utilization Trend
+var trendLabels = [];
+for (di = 0; di < trendDates.length; di++) trendLabels.push(shortDate(trendDates[di]));
+
+var trendUrl = chartUrl({
+    type: 'bar',
     data: {
         labels: trendLabels,
         datasets: [
-            { type: "bar", label: "Total Ticket", data: trendTotalTickets, backgroundColor: "#5470c6" },
-            { type: "bar", label: "Accepted Tickets", data: trendAcceptedTickets, backgroundColor: "#91cc75" },
-            { type: "line", label: "Accept Rate", data: trendAcceptRates, borderColor: "#f0883e", yAxisID: "y1", fill: false, pointRadius: 2 }
+            { type: 'bar', label: 'Total Ticket', data: trendTotals, backgroundColor: '#58a6ff', yAxisID: 'y', datalabels: barLabel() },
+            { type: 'bar', label: 'Accepted Tickets', data: trendAccepted, backgroundColor: '#3fb950', yAxisID: 'y', datalabels: barLabel() },
+            {
+                type: 'line', label: 'Accept Rate', data: trendRates, yAxisID: 'y1',
+                borderColor: '#f0883e', backgroundColor: '__G_ORANGE__', fill: true, lineTension: 0.4,
+                borderWidth: 3, pointRadius: 3, pointBackgroundColor: '#f0883e', pointBorderColor: '#f0883e',
+                datalabels: { anchor: 'end', align: 'top', color: '#f0883e', font: { size: 8 }, formatter: '__F_PCT1__' }
+            }
         ]
     },
     options: {
-        title: { display: true, text: "Mateline Utilization Trend", fontColor: "#c9d1d9", fontSize: 16 },
-        legend: { labels: { fontColor: "#c9d1d9", boxWidth: 12 } },
+        title: titleCfg('Mateline Utilization Trend'),
+        legend: legendCfg,
+        plugins: { datalabels: { display: true } },
+        layout: { padding: { top: 6, right: 6 } },
         scales: {
-            xAxes: [{ ticks: { fontColor: "#8b949e", fontSize: 9 }, gridLines: { color: "#27272a" } }],
+            xAxes: axisX(10),
             yAxes: [
-                { id: "y", position: "left", ticks: { fontColor: "#8b949e" }, gridLines: { color: "#27272a" } },
-                { id: "y1", position: "right", ticks: { fontColor: "#8b949e", min: 0, max: 100 }, gridLines: { display: false } }
+                { id: 'y', position: 'left', scaleLabel: { display: true, labelString: 'Count', fontColor: axisFont },
+                    ticks: { fontColor: axisFont, beginAtZero: true }, gridLines: { color: gridColor } },
+                { id: 'y1', position: 'right', scaleLabel: { display: true, labelString: 'Accept Rate', fontColor: axisFont },
+                    ticks: { fontColor: axisFont, min: 0, max: 100, callback: '__F_PCT__' }, gridLines: { display: false } }
             ]
         }
     }
-};
-var trendChartUrl = "https://quickchart.io/chart?w=860&h=340&bkg=%230d0d10&c=" + encodeURIComponent(JSON.stringify(trendChartConfig));
+}, CHART_W, 420);
 
-// C. Daily Accept Rate Chart (Multi-Bar + Overall Accept Rate Area Line)
-var dailyRateTa = [];
-var dailyRatePer = [];
-var dailyRateMan = [];
-var dailyRateOvr = [];
-
-for (var dr2 = 0; dr2 < trendDates.length; dr2++) {
-    var dKey2 = trendDates[dr2];
-    var dObj2 = dailyDatesMap[dKey2];
-    
-    var taP = (dObj2.parties['Telkom Akses']) || { total: 0, accepted: 0 };
-    var perP = (dObj2.parties['Persada']) || { total: 0, accepted: 0 };
-    var manP = (dObj2.parties['Mandau']) || { total: 0, accepted: 0 };
-    
-    dailyRateTa.push(taP.total > 0 ? Number(((taP.accepted / taP.total) * 100).toFixed(2)) : 0);
-    dailyRatePer.push(perP.total > 0 ? Number(((perP.accepted / perP.total) * 100).toFixed(2)) : 0);
-    dailyRateMan.push(manP.total > 0 ? Number(((manP.accepted / manP.total) * 100).toFixed(2)) : 0);
-    dailyRateOvr.push(dObj2.total > 0 ? Number(((dObj2.accepted / dObj2.total) * 100).toFixed(2)) : 0);
+// C. Daily Accept Rate by Party
+var dailyDatasets = [];
+for (pi = 0; pi < PARTIES.length; pi++) {
+    dailyDatasets.push({
+        type: 'bar', label: PARTIES[pi], data: partyRateSeries[PARTIES[pi]],
+        backgroundColor: PARTY_COLORS[PARTIES[pi]], datalabels: barLabel('#c9d1d9', 7)
+    });
 }
-
-var dailyAcceptRateChartConfig = {
-    type: "bar",
-    data: {
-        labels: trendLabels,
-        datasets: [
-            { type: "bar", label: "Telkom Akses", data: dailyRateTa, backgroundColor: "#c8102e" },
-            { type: "bar", label: "Persada", data: dailyRatePer, backgroundColor: "#31b5c6" },
-            { type: "bar", label: "Mandau", data: dailyRateMan, backgroundColor: "#62b230" },
-            { type: "line", label: "Overall Accept Rate", data: dailyRateOvr, borderColor: "#f0883e", backgroundColor: "rgba(240,136,62,0.2)", fill: true, pointRadius: 2 }
-        ]
-    },
+dailyDatasets.push({
+    type: 'line', label: 'Overall Accept Rate', data: trendOverall,
+    borderColor: '#f0883e', backgroundColor: '__G_ORANGE__', fill: true, lineTension: 0.4,
+    borderWidth: 3, pointRadius: 3, pointBackgroundColor: '#f0883e', pointBorderColor: '#f0883e',
+    datalabels: { anchor: 'end', align: 'top', color: '#f0883e', font: { size: 8 }, formatter: '__F_PCT2__' }
+});
+var dailyUrl = chartUrl({
+    type: 'bar',
+    data: { labels: trendLabels, datasets: dailyDatasets },
     options: {
-        title: { display: true, text: "Daily Accept Rate", fontColor: "#c9d1d9", fontSize: 16 },
-        legend: { labels: { fontColor: "#c9d1d9", boxWidth: 12 } },
+        title: titleCfg('Daily Accept Rate'),
+        legend: legendCfg,
+        plugins: { datalabels: { display: true } },
+        layout: { padding: { top: 6, right: 6 } },
         scales: {
-            xAxes: [{ ticks: { fontColor: "#8b949e", fontSize: 9 }, gridLines: { color: "#27272a" } }],
-            yAxes: [{ ticks: { fontColor: "#8b949e", min: 0, max: 100 }, gridLines: { color: "#27272a" } }]
+            xAxes: axisX(10),
+            yAxes: [{ position: 'left', scaleLabel: { display: true, labelString: 'Accept Rate', fontColor: axisFont },
+                ticks: { fontColor: axisFont, min: 0, max: 100, callback: '__F_PCT__' }, gridLines: { color: gridColor } }]
         }
     }
-};
-var dailyAcceptRateChartUrl = "https://quickchart.io/chart?w=860&h=340&bkg=%230d0d10&c=" + encodeURIComponent(JSON.stringify(dailyAcceptRateChartConfig));
+}, CHART_W, 420);
 
-// D. 1 Day - Hourly Timeline 24-Hours Smooth Line Chart
-var hours24 = [];
-var hourlyTotals = [];
-var hourlyAccepted = [];
-var hourlyDepart = [];
-var hourlyArrive = [];
-var hourlyLeave = [];
-
-for (var hx = 0; hx < 24; hx++) {
-    hours24.push((hx < 10 ? '0' + hx : '' + hx) + ':00');
-    hourlyTotals.push(hourly[hx].total);
-    hourlyAccepted.push(hourly[hx].accepted);
-    hourlyDepart.push(hourly[hx].depart);
-    hourlyArrive.push(hourly[hx].arrive);
-    hourlyLeave.push(hourly[hx].leave);
-}
-
-var hourlyChartConfig = {
-    type: "line",
-    data: {
-        labels: hours24,
-        datasets: [
-            { label: "Total Ticket", data: hourlyTotals, borderColor: "#ffffff", fill: false, pointRadius: 2 },
-            { label: "Accepted", data: hourlyAccepted, borderColor: "#3b82f6", fill: false, pointRadius: 2 },
-            { label: "Depart", data: hourlyDepart, borderColor: "#f97316", fill: false, pointRadius: 2 },
-            { label: "Arrive", data: hourlyArrive, borderColor: "#ec4899", fill: false, pointRadius: 2 },
-            { label: "Leave", data: hourlyLeave, borderColor: "#34d399", fill: false, pointRadius: 2 }
-        ]
-    },
-    options: {
-        title: { display: true, text: "1 Day - Hourly Timeline (" + targetDate + ")", fontColor: "#c9d1d9", fontSize: 16 },
-        legend: { labels: { fontColor: "#c9d1d9", boxWidth: 12 } },
-        scales: {
-            xAxes: [{ ticks: { fontColor: "#8b949e", fontSize: 9 }, gridLines: { color: "#27272a" } }],
-            yAxes: [{ ticks: { fontColor: "#8b949e", precision: 0 }, gridLines: { color: "#27272a" } }]
+// D & E. Milestone line charts (Total putus-putus putih + 4 milestone area)
+function milestoneChart(labels, series, height, tickSize) {
+    function ds(name, data, color, grad, width, dashed) {
+        var o = {
+            label: name, data: data, borderColor: color, backgroundColor: grad, fill: true, lineTension: 0.4,
+            borderWidth: width, pointRadius: 3, pointBackgroundColor: color, pointBorderColor: color,
+            datalabels: { display: false }
+        };
+        if (dashed) o.borderDash = [6, 4];
+        return o;
+    }
+    return chartUrl({
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                ds('Total Ticket', series.total, '#ffffff', '__G_WHITE__', 2, true),
+                ds('Accepted', series.accepted, '#3b82f6', '__G_BLUE__', 2.5, false),
+                ds('Depart', series.depart, '#f97316', '__G_ORANGE2__', 2.5, false),
+                ds('Arrive', series.arrive, '#ec4899', '__G_PINK__', 2.5, false),
+                ds('Leave', series.leave, '#34d399', '__G_GREEN__', 2.5, false)
+            ]
+        },
+        options: {
+            legend: legendCfg,
+            layout: { padding: { top: 10, right: 10 } },
+            scales: {
+                xAxes: [{ ticks: { fontColor: '#a1a1aa', fontSize: tickSize || 10 }, gridLines: { color: '#27272a', display: false } }],
+                yAxes: [{ ticks: { fontColor: '#a1a1aa', beginAtZero: true, precision: 0 },
+                    gridLines: { color: '#27272a', borderDash: [4, 4] } }]
+            }
         }
+    }, CHART_W, height);
+}
+
+var hourLabels = [], hSeries = { total: [], accepted: [], depart: [], arrive: [], leave: [] };
+for (hh = 0; hh < 24; hh++) {
+    hourLabels.push(pad2(hh) + ':00');
+    hSeries.total.push(hourly[hh].total);
+    hSeries.accepted.push(hourly[hh].accepted);
+    hSeries.depart.push(hourly[hh].depart);
+    hSeries.arrive.push(hourly[hh].arrive);
+    hSeries.leave.push(hourly[hh].leave);
+}
+var hourlyUrl = milestoneChart(hourLabels, hSeries, 340, 9);
+
+var rSeries = { total: [], accepted: [], depart: [], arrive: [], leave: [] };
+for (di = 0; di < trendDates.length; di++) {
+    var rm = rangeMap[trendDates[di]];
+    rSeries.total.push(rm.total);
+    rSeries.accepted.push(rm.accepted);
+    rSeries.depart.push(rm.depart);
+    rSeries.arrive.push(rm.arrive);
+    rSeries.leave.push(rm.leave);
+}
+var rangeUrl = milestoneChart(trendLabels, rSeries, 340, 10);
+
+// ======================================================================
+// 6. HTML BUILDER
+// ======================================================================
+var FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+
+function spacer(h) { return '<tr><td height="' + h + '" style="font-size:0; line-height:0;">&nbsp;</td></tr>'; }
+
+function cardBox(inner) {
+    return '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:' + C.card +
+        '; border:1px solid ' + C.border + '; border-radius:12px;"><tr><td style="padding:20px;">' + inner + '</td></tr></table>';
+}
+
+function cardHeader(title, subtitle) {
+    return '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:14px;"><tr>' +
+        '<td align="left" style="font-size:15px; font-weight:700; color:' + C.text + ';">' + esc(title) + '</td>' +
+        '<td align="right" style="font-size:12px; color:' + C.sub + ';">' + esc(subtitle || '') + '</td></tr></table>';
+}
+
+// Warna -> class (mengecilkan ukuran HTML; Gmail memotong email > ~102KB)
+var COLOR_CLASS = {};
+COLOR_CLASS[C.sub] = 'cs';
+COLOR_CLASS[C.muted] = 'cm';
+COLOR_CLASS[C.blue] = 'cb';
+COLOR_CLASS[C.orange] = 'co';
+COLOR_CLASS[C.pink] = 'cp';
+COLOR_CLASS[C.green] = 'cg';
+COLOR_CLASS['#ffffff'] = 'cw';
+COLOR_CLASS['#58a6ff'] = 'cl';
+COLOR_CLASS['#e4e4e7'] = 'ce';
+
+function cc(color) { return COLOR_CLASS[color] ? ' ' + COLOR_CLASS[color] : ''; }
+function wc(weight) { return weight >= 700 ? ' w7' : (weight >= 600 ? ' w6' : ''); }
+
+function th(label, align, color) {
+    return '<th class="th' + cc(color) + '" align="' + (align || 'right') + '">' + esc(label) + '</th>';
+}
+function td(value, align, color, weight, small) {
+    return '<td class="td' + cc(color) + wc(weight) + (small ? ' f11' : '') + '" align="' + (align || 'right') + '">' + value + '</td>';
+}
+
+// Tabel matriks tanggal (trend & daily) - kolom rapat
+function dateMatrixHead(firstLabel, dates, lastLabel) {
+    var h = '<tr><th class="mh" align="left">' + esc(firstLabel) + '</th>';
+    var i;
+    for (i = 0; i < dates.length; i++) {
+        h += '<th class="mh mhd" align="right">' + shortDate(dates[i]) + '</th>';
     }
-};
-var hourlyChartUrl = "https://quickchart.io/chart?w=860&h=260&bkg=%230d0d10&c=" + encodeURIComponent(JSON.stringify(hourlyChartConfig));
-
-
-// =========================================================================
-// 6. RENDER HTML IDENTIK DENGAN DASHBOARD ASLI (DARK THEME #09090b / #0d0d10)
-// =========================================================================
-var html = '' +
-'<!DOCTYPE html>' +
-'<html>' +
-'<head>' +
-'<meta charset="utf-8">' +
-'<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
-'</head>' +
-'<body style="margin:0; padding:0; background-color:#09090b; font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif; color:#e4e4e7;">' +
-'  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#09090b; padding:24px 0;">' +
-'    <tr>' +
-'      <td align="center">' +
-'        <!-- Dashboard Card Wrapper (Width: 920px, Dark #09090b) -->' +
-'        <table width="920" cellpadding="0" cellspacing="0" border="0" style="max-width:920px; width:100%; background-color:#09090b; padding:20px;">' +
-
-          // 1. DASHBOARD HEADER & LIVE CLOCK
-'          <tr>' +
-'            <td style="padding-bottom:20px; border-bottom:1px solid #27272a;">' +
-'              <table width="100%" cellpadding="0" cellspacing="0" border="0">' +
-'                <tr>' +
-'                  <td align="left">' +
-'                    <div style="font-size:24px; font-weight:700; color:#fafafa; letter-spacing:0.5px;">MATELINE UTILIZATION DASHBOARD</div>' +
-'                    <div style="font-size:14px; color:#a1a1aa; margin-top:4px;">Daily Mateline utilization and ticket acceptance monitoring</div>' +
-'                  </td>' +
-'                  <td align="right" valign="top">' +
-'                    <div style="font-size:13px; font-weight:800; color:#a0aec0; background:#0d0d10; border:1px solid #27272a; border-radius:6px; padding:6px 14px; display:inline-block;">' +
-'                      ' + jParts.fullTimestamp + '' +
-'                    </div>' +
-'                  </td>' +
-'                </tr>' +
-'              </table>' +
-'            </td>' +
-'          </tr>' +
-
-          // 2. ACTIVE FILTER BADGE BREADCRUMB
-'          <tr>' +
-'            <td style="padding:16px 0 20px 0;">' +
-'              <div style="background:#0d0d10; border:1px solid #27272a; border-radius:8px; padding:10px 16px; font-size:13px; font-weight:600; color:#58a6ff; display:inline-block;">' +
-'                Active: ' + startDateRange + ' – ' + endDateRange + ' | Region: All Region | Party: All Party' +
-'              </div>' +
-'            </td>' +
-'          </tr>' +
-
-          // 3. TOP SUMMARY ROW (3 Grid: Ticket Summary | Donut Chart | FME Detail Table)
-'          <tr>' +
-'            <td style="padding-bottom:24px;">' +
-'              <table width="100%" cellpadding="0" cellspacing="0" border="0">' +
-'                <tr>' +
-                  // Card 1: Ticket Summary
-'                  <td width="30%" valign="top" style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:16px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.15);">' +
-'                    <div style="font-size:14px; font-weight:600; color:#fafafa; margin-bottom:12px;">Ticket Summary</div>' +
-'                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:14px;">' +
-'                      <tr>' +
-'                        <td width="48%" style="padding:12px; border-radius:8px; background:#d1eaff;">' +
-'                          <div style="font-size:11px; font-weight:700; color:#0367c1; text-transform:uppercase; margin-bottom:6px;">TOTAL TICKETS</div>' +
-'                          <div style="font-size:32px; font-weight:bold; color:#0367c1; line-height:1;">' + totalTicketsD1 + '</div>' +
-'                        </td>' +
-'                        <td width="4%">&nbsp;</td>' +
-'                        <td width="48%" style="padding:12px; border-radius:8px; background:#daf5e6;">' +
-'                          <div style="font-size:11px; font-weight:700; color:#027039; text-transform:uppercase; margin-bottom:6px;">TOTAL ACCEPTED</div>' +
-'                          <div style="font-size:32px; font-weight:bold; color:#027039; line-height:1;">' + countAcceptedD1 + '</div>' +
-'                        </td>' +
-'                      </tr>' +
-'                    </table>' +
-'                    <div>' +
-'                      <div style="font-size:13px; color:#a1a1aa; margin-bottom:4px;">Acceptance Rate</div>' +
-'                      <div style="font-size:26px; font-weight:bold; color:#fafafa; margin-bottom:8px;">' + acceptRateD1 + '%</div>' +
-'                      <div style="height:10px; background:#1f2937; border-radius:999px; overflow:hidden;">' +
-'                        <div style="width:' + acceptRateD1 + '%; height:100%; background:#3b82f6; border-radius:999px;"></div>' +
-'                      </div>' +
-'                    </div>' +
-'                  </td>' +
-
-'                  <td width="3%">&nbsp;</td>' +
-
-                  // Card 2: Accepted Ticket Distribution by Party (Donut Chart)
-'                  <td width="32%" valign="top" style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:16px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.15);">' +
-'                    <div style="font-size:14px; font-weight:600; color:#fafafa; margin-bottom:12px;">Accepted Ticket Distribution by Party</div>' +
-'                    <table width="100%" cellpadding="0" cellspacing="0" border="0">' +
-'                      <tr>' +
-'                        <td align="center">' +
-'                          <img src="' + donutChartUrl + '" width="280" height="175" style="display:block; max-width:100%; border:0;" alt="Donut Chart" />' +
-'                        </td>' +
-'                      </tr>' +
-'                    </table>' +
-'                  </td>' +
-
-'                  <td width="3%">&nbsp;</td>' +
-
-                  // Card 3: FME Ticket Acceptance Detail Table
-'                  <td width="32%" valign="top" style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:16px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.15);">' +
-'                    <div style="font-size:14px; font-weight:600; color:#fafafa; margin-bottom:12px;">FME Ticket Acceptance Detail</div>' +
-'                    <table width="100%" cellpadding="6" cellspacing="0" border="0" style="font-size:11px; border-collapse:collapse;">' +
-'                      <thead>' +
-'                        <tr style="border-bottom:1px solid #27272a; color:#8b949e; text-transform:uppercase;">' +
-'                          <th align="left">FME PARTY</th>' +
-'                          <th align="center">TOTAL FME</th>' +
-'                          <th align="center">TICKET COUNT</th>' +
-'                          <th align="center">ACCEPTED COUNT</th>' +
-'                          <th align="right">ACCEPT RATE (%)</th>' +
-'                        </tr>' +
-'                      </thead>' +
-'                      <tbody>';
-
-for (var pi = 0; pi < CM_PARTY_ORDER.length; pi++) {
-    var pName = CM_PARTY_ORDER[pi];
-    var pData = fmePartySummary[pName];
-    html += '' +
-'                        <tr style="border-bottom:1px solid #1f1f23;">' +
-'                          <td align="left" style="font-weight:700; color:#fafafa; padding:8px 0;">' + pName + '</td>' +
-'                          <td align="center" style="color:#a1a1aa;">' + pData.totalFme + '</td>' +
-'                          <td align="center" style="color:#fafafa;">' + pData.ticketCount + '</td>' +
-'                          <td align="center" style="color:#38bdf8; font-weight:600;">' + pData.acceptedCount + '</td>' +
-'                          <td align="right" style="font-weight:700; color:#fafafa;">' + pData.acceptRate + '%</td>' +
-'                        </tr>';
+    return h + '<th class="mh w7" align="right" style="color:' + C.text + ';">' + esc(lastLabel) + '</th></tr>';
 }
-
-html += '' +
-'                      </tbody>' +
-'                    </table>' +
-'                  </td>' +
-'                </tr>' +
-'              </table>' +
-'            </td>' +
-'          </tr>' +
-
-          // 4. ACCEPT RATE BY PARTY (D-1 CARDS ROW)
-'          <tr>' +
-'            <td style="padding-bottom:24px;">' +
-'              <table width="100%" cellpadding="0" cellspacing="0" border="0">' +
-'                <tr>';
-
-for (var k2 = 0; k2 < CM_PARTY_ORDER.length; k2++) {
-    var pKey2 = CM_PARTY_ORDER[k2];
-    var pD2 = partyD1[pKey2] || { total: 0, accepted: 0 };
-    var pR2 = pD2.total > 0 ? ((pD2.accepted / pD2.total) * 100).toFixed(1) : '0.0';
-    html += '' +
-'                  <td width="31%" style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:16px 20px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.15);">' +
-'                    <div style="font-size:12px; color:#8b949e; font-weight:600; text-transform:uppercase;">' + pKey2.toUpperCase() + ' – D-1</div>' +
-'                    <div style="font-size:28px; font-weight:700; color:#58a6ff; margin:6px 0;">' + pR2 + '%</div>' +
-'                    <div style="font-size:12px; color:#8b949e;">' + pD2.accepted + ' / ' + pD2.total + ' accepted</div>' +
-'                  </td>' + (k2 < 2 ? '<td width="3%">&nbsp;</td>' : '');
-}
-
-html += '' +
-'                </tr>' +
-'              </table>' +
-'            </td>' +
-'          </tr>' +
-
-          // 5. SECTION: MATELINE UTILIZATION TREND (Full Chart & Table Breakdown)
-'          <tr>' +
-'            <td style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:20px; margin-bottom:24px;">' +
-              // The Trend Chart Image
-'              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">' +
-'                <tr>' +
-'                  <td align="center">' +
-'                    <img src="' + trendChartUrl + '" width="860" style="display:block; width:100%; max-width:860px; height:auto; border-radius:8px;" alt="Mateline Utilization Trend Chart" />' +
-'                  </td>' +
-'                </tr>' +
-'              </table>' +
-
-              // Data Table (Ticket Count, Accepted Count, Accept Rate)
-'              <div style="overflow-x:auto;">' +
-'                <table width="100%" cellpadding="6" cellspacing="0" border="0" style="font-size:11px; border-collapse:collapse; text-align:center;">' +
-'                  <thead>' +
-'                    <tr style="background:#18181b; color:#8b949e; border-bottom:1px solid #27272a;">' +
-'                      <th align="left" style="padding-left:8px;">Metric</th>';
-
-for (var dt = 0; dt < trendDates.length; dt++) {
-    html += '<th>' + trendDates[dt].substring(5) + '</th>';
-}
-html += '<th style="color:#fafafa; font-weight:700;">Grand Total</th></tr></thead><tbody>';
-
-// Row Ticket Count
-html += '<tr style="border-bottom:1px solid #1f1f23;"><td align="left" style="padding-left:8px; font-weight:600; color:#fafafa;">Ticket Count</td>';
-for (var dt1 = 0; dt1 < trendDates.length; dt1++) {
-    var v1 = dailyDatesMap[trendDates[dt1]].total;
-    html += '<td style="color:#fafafa;">' + v1 + '</td>';
-}
-html += '<td style="font-weight:700; color:#fafafa;">' + rangeTotalTickets + '</td></tr>';
-
-// Row Accepted Count
-html += '<tr style="border-bottom:1px solid #1f1f23;"><td align="left" style="padding-left:8px; font-weight:600; color:#3fb950;">Accepted Count</td>';
-for (var dt2 = 0; dt2 < trendDates.length; dt2++) {
-    var v2 = dailyDatesMap[trendDates[dt2]].accepted;
-    html += '<td style="color:#3fb950;">' + v2 + '</td>';
-}
-html += '<td style="font-weight:700; color:#3fb950;">' + rangeAccepted + '</td></tr>';
-
-// Row Accept Rate
-html += '<tr><td align="left" style="padding-left:8px; font-weight:600; color:#f0883e;">Accept Rate</td>';
-for (var dt3 = 0; dt3 < trendDates.length; dt3++) {
-    var it = dailyDatesMap[trendDates[dt3]];
-    var r3 = it.total > 0 ? ((it.accepted / it.total) * 100).toFixed(2) : '0.00';
-    html += '<td style="color:#f0883e;">' + r3 + '%</td>';
-}
-var totalAllRate = rangeTotalTickets > 0 ? ((rangeAccepted / rangeTotalTickets) * 100).toFixed(2) : '0.00';
-html += '<td style="font-weight:700; color:#f0883e;">' + totalAllRate + '%</td></tr>';
-
-html += '' +
-'                  </tbody>' +
-'                </table>' +
-'              </div>' +
-'            </td>' +
-'          </tr>' +
-
-          // 6. SECTION: DAILY ACCEPT RATE BY PARTY (Full Chart & Matrix Table)
-'          <tr>' +
-'            <td style="padding:24px 0 24px 0;">' +
-'              <div style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:20px;">' +
-                // The Daily Accept Rate Chart Image
-'                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">' +
-'                  <tr>' +
-'                    <td align="center">' +
-'                      <img src="' + dailyAcceptRateChartUrl + '" width="860" style="display:block; width:100%; max-width:860px; height:auto; border-radius:8px;" alt="Daily Accept Rate Chart" />' +
-'                    </td>' +
-'                  </tr>' +
-'                </table>' +
-
-                // Daily Accept Rate Table
-'                <div style="overflow-x:auto;">' +
-'                  <table width="100%" cellpadding="6" cellspacing="0" border="0" style="font-size:11px; border-collapse:collapse; text-align:center;">' +
-'                    <thead>' +
-'                      <tr style="background:#18181b; color:#8b949e; border-bottom:1px solid #27272a;">' +
-'                        <th align="left" style="padding-left:8px;">Party Name</th>';
-
-for (var dp = 0; dp < trendDates.length; dp++) {
-    html += '<th>' + trendDates[dp].substring(5) + '</th>';
-}
-html += '<th style="color:#fafafa; font-weight:700;">Grand Total</th></tr></thead><tbody>';
-
-// Party Rows (Telkom Akses, Persada, Mandau)
-for (var pr = 0; pr < CM_PARTY_ORDER.length; pr++) {
-    var partyNameStr = CM_PARTY_ORDER[pr];
-    html += '<tr style="border-bottom:1px solid #1f1f23;"><td align="left" style="padding-left:8px; font-weight:600; color:#fafafa;">' + partyNameStr + '</td>';
-    for (var pd = 0; pd < trendDates.length; pd++) {
-        var dayPData = (dailyDatesMap[trendDates[pd]].parties[partyNameStr]) || { total: 0, accepted: 0 };
-        var pRateCell = dayPData.total > 0 ? ((dayPData.accepted / dayPData.total) * 100).toFixed(2) : '0.00';
-        html += '<td style="color:#a1a1aa;">' + pRateCell + '%</td>';
+function dateMatrixRow(label, values, grand, color, boldLabel) {
+    var r = '<tr><td class="mc ml' + (boldLabel ? ' w7' : '') + '" align="left">' + esc(label) + '</td>';
+    var i;
+    for (i = 0; i < values.length; i++) {
+        r += '<td class="mc mcd' + cc(color) + '" align="right">' + values[i] + '</td>';
     }
-    var pGrand = fmePartySummary[partyNameStr].acceptRate;
-    html += '<td style="font-weight:700; color:#fafafa;">' + pGrand + '%</td></tr>';
+    return r + '<td class="mc w7' + cc(color) + '" align="right">' + grand + '</td></tr>';
 }
 
-// Overall Row
-html += '<tr style="font-weight:700; background:#18181b;"><td align="left" style="padding-left:8px; color:#f0883e;">Overall Accept Rate</td>';
-for (var od = 0; od < trendDates.length; od++) {
-    var odItem = dailyDatesMap[trendDates[od]];
-    var odRate = odItem.total > 0 ? ((odItem.accepted / odItem.total) * 100).toFixed(2) : '0.00';
-    html += '<td style="color:#f0883e;">' + odRate + '%</td>';
-}
-html += '<td style="color:#f0883e;">' + totalAllRate + '%</td></tr>';
-
-html += '' +
-'                    </tbody>' +
-'                  </table>' +
-'                </div>' +
-'              </div>' +
-'            </td>' +
-'          </tr>' +
-
-          // 7. MILESTONE UTILIZATION DASHBOARD (5 METRIC CARDS)
-'          <tr>' +
-'            <td style="padding-bottom:20px;">' +
-'              <div style="font-size:16px; font-weight:700; color:#fafafa; margin-bottom:12px; letter-spacing:0.5px;">MILESTONE UTILIZATION DASHBOARD</div>' +
-'              <table width="100%" cellpadding="0" cellspacing="0" border="0">' +
-'                <tr>' +
-                  // Total Ticket Card
-'                  <td width="18%" style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:16px 20px;">' +
-'                    <div style="font-size:12px; font-weight:600; color:#a1a1aa; text-transform:uppercase; margin-bottom:8px;">TOTAL TICKET</div>' +
-'                    <div style="font-size:32px; font-weight:700; color:#fafafa; line-height:1;">' + rangeTotalTickets + '</div>' +
-'                  </td>' +
-'                  <td width="2%">&nbsp;</td>' +
-                  // Total Accepted Card
-'                  <td width="18%" style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:16px 20px;">' +
-'                    <div style="font-size:12px; font-weight:600; color:#a1a1aa; text-transform:uppercase; margin-bottom:8px;">TOTAL ACCEPTED</div>' +
-'                    <div style="display:flex; justify-content:space-between; align-items:baseline;">' +
-'                      <span style="font-size:32px; font-weight:700; color:#fafafa; line-height:1;">' + rangeAccepted + '</span>' +
-'                      <span style="font-size:13px; font-weight:600; color:#58a6ff; background:rgba(88,166,255,0.1); border:1px solid rgba(88,166,255,0.2); border-radius:9999px; padding:2px 8px;">' + rangeAcceptedPct + '%</span>' +
-'                    </div>' +
-'                  </td>' +
-'                  <td width="2%">&nbsp;</td>' +
-                  // Total Depart Card
-'                  <td width="18%" style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:16px 20px;">' +
-'                    <div style="font-size:12px; font-weight:600; color:#a1a1aa; text-transform:uppercase; margin-bottom:8px;">TOTAL DEPART</div>' +
-'                    <div style="display:flex; justify-content:space-between; align-items:baseline;">' +
-'                      <span style="font-size:32px; font-weight:700; color:#fafafa; line-height:1;">' + rangeDepart + '</span>' +
-'                      <span style="font-size:13px; font-weight:600; color:#f97316; background:rgba(249,115,22,0.1); border:1px solid rgba(249,115,22,0.2); border-radius:9999px; padding:2px 8px;">' + rangeDepartPct + '%</span>' +
-'                    </div>' +
-'                  </td>' +
-'                  <td width="2%">&nbsp;</td>' +
-                  // Total Arrive Card
-'                  <td width="18%" style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:16px 20px;">' +
-'                    <div style="font-size:12px; font-weight:600; color:#a1a1aa; text-transform:uppercase; margin-bottom:8px;">TOTAL ARRIVE</div>' +
-'                    <div style="display:flex; justify-content:space-between; align-items:baseline;">' +
-'                      <span style="font-size:32px; font-weight:700; color:#fafafa; line-height:1;">' + rangeArrive + '</span>' +
-'                      <span style="font-size:13px; font-weight:600; color:#ec4899; background:rgba(236,72,153,0.1); border:1px solid rgba(236,72,153,0.2); border-radius:9999px; padding:2px 8px;">' + rangeArrivePct + '%</span>' +
-'                    </div>' +
-'                  </td>' +
-'                  <td width="2%">&nbsp;</td>' +
-                  // Total Leave Card
-'                  <td width="18%" style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:16px 20px;">' +
-'                    <div style="font-size:12px; font-weight:600; color:#a1a1aa; text-transform:uppercase; margin-bottom:8px;">TOTAL LEAVE</div>' +
-'                    <div style="display:flex; justify-content:space-between; align-items:baseline;">' +
-'                      <span style="font-size:32px; font-weight:700; color:#fafafa; line-height:1;">' + rangeLeave + '</span>' +
-'                      <span style="font-size:13px; font-weight:600; color:#34d399; background:rgba(52,211,153,0.1); border:1px solid rgba(52,211,153,0.2); border-radius:9999px; padding:2px 8px;">' + rangeLeavePct + '%</span>' +
-'                    </div>' +
-'                  </td>' +
-'                </tr>' +
-'              </table>' +
-'            </td>' +
-'          </tr>' +
-
-          // 8. SECTION: 1 DAY - HOURLY TIMELINE (Chart & 2-Hourly Matrix Table)
-'          <tr>' +
-'            <td style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:20px; margin-bottom:24px;">' +
-'              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">' +
-'                <div style="font-size:14px; font-weight:600; color:#fafafa;">1 Day – Hourly Timeline (' + targetDate + ')</div>' +
-'                <div style="font-size:12px; color:#a1a1aa;">' + totalTicketsD1 + ' tickets on this day</div>' +
-'              </div>' +
-
-              // Hourly 24h Line Chart Image
-'              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">' +
-'                <tr>' +
-'                  <td align="center">' +
-'                    <img src="' + hourlyChartUrl + '" width="860" style="display:block; width:100%; max-width:860px; height:auto; border-radius:8px;" alt="Hourly Timeline Chart" />' +
-'                  </td>' +
-'                </tr>' +
-'              </table>' +
-
-              // 2-Hourly Breakdown Table
-'              <div style="overflow-x:auto;">' +
-'                <table width="100%" cellpadding="6" cellspacing="0" border="0" style="font-size:11px; border-collapse:collapse; text-align:center;">' +
-'                  <thead>' +
-'                    <tr style="background:#18181b; color:#8b949e; border-bottom:1px solid #27272a;">' +
-'                      <th align="left" style="padding-left:10px; color:#fafafa;">Milestone</th>';
-
-for (var hx2 = 0; hx2 < 24; hx2 += 2) {
-    html += '<th>' + (hx2 < 10 ? '0' + hx2 : '' + hx2) + ':00</th>';
-}
-html += '<th style="color:#fafafa; font-weight:700;">Total</th></tr></thead><tbody>';
-
-// Total Ticket Row
-html += '<tr style="border-bottom:1px solid #1f1f23;"><td align="left" style="padding-left:10px; font-weight:600; color:#ffffff;"><span style="display:inline-block; width:8px; height:8px; background:#ffffff; border-radius:50%; margin-right:6px;"></span>Total Ticket</td>';
-for (var h1 = 0; h1 < 24; h1 += 2) {
-    html += '<td style="color:#ffffff;">' + (hourly[h1].total + hourly[h1+1].total) + '</td>';
-}
-html += '<td style="font-weight:700; color:#ffffff;">' + totalTicketsD1 + '</td></tr>';
-
-// Accepted Row
-html += '<tr style="border-bottom:1px solid #1f1f23;"><td align="left" style="padding-left:10px; font-weight:600; color:#3b82f6;"><span style="display:inline-block; width:8px; height:8px; background:#3b82f6; border-radius:50%; margin-right:6px;"></span>Accepted</td>';
-for (var h2 = 0; h2 < 24; h2 += 2) {
-    html += '<td style="color:#3b82f6;">' + (hourly[h2].accepted + hourly[h2+1].accepted) + '</td>';
-}
-html += '<td style="font-weight:700; color:#3b82f6;">' + countAcceptedD1 + '</td></tr>';
-
-// Depart Row
-html += '<tr style="border-bottom:1px solid #1f1f23;"><td align="left" style="padding-left:10px; font-weight:600; color:#f97316;"><span style="display:inline-block; width:8px; height:8px; background:#f97316; border-radius:50%; margin-right:6px;"></span>Depart</td>';
-for (var h3 = 0; h3 < 24; h3 += 2) {
-    html += '<td style="color:#f97316;">' + (hourly[h3].depart + hourly[h3+1].depart) + '</td>';
-}
-html += '<td style="font-weight:700; color:#f97316;">' + countDepartD1 + '</td></tr>';
-
-// Arrive Row
-html += '<tr style="border-bottom:1px solid #1f1f23;"><td align="left" style="padding-left:10px; font-weight:600; color:#ec4899;"><span style="display:inline-block; width:8px; height:8px; background:#ec4899; border-radius:50%; margin-right:6px;"></span>Arrive</td>';
-for (var h4 = 0; h4 < 24; h4 += 2) {
-    html += '<td style="color:#ec4899;">' + (hourly[h4].arrive + hourly[h4+1].arrive) + '</td>';
-}
-html += '<td style="font-weight:700; color:#ec4899;">' + countArriveD1 + '</td></tr>';
-
-// Leave Row
-html += '<tr><td align="left" style="padding-left:10px; font-weight:600; color:#34d399;"><span style="display:inline-block; width:8px; height:8px; background:#34d399; border-radius:50%; margin-right:6px;"></span>Leave</td>';
-for (var h5 = 0; h5 < 24; h5 += 2) {
-    html += '<td style="color:#34d399;">' + (hourly[h5].leave + hourly[h5+1].leave) + '</td>';
-}
-html += '<td style="font-weight:700; color:#34d399;">' + countLeaveD1 + '</td></tr>';
-
-html += '' +
-'                  </tbody>' +
-'                </table>' +
-'              </div>' +
-'            </td>' +
-'          </tr>' +
-
-          // 9. SECTION: CLUSTER OFFICE MILESTONE SUMMARY
-'          <tr>' +
-'            <td style="padding:24px 0 20px 0;">' +
-'              <div style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:20px;">' +
-'                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">' +
-'                  <div style="font-size:14px; font-weight:600; color:#fafafa;">Cluster Office Milestone Summary</div>' +
-'                  <div style="font-size:12px; color:#a1a1aa;">' + clusterList.length + ' clusters active in D-1</div>' +
-'                </div>' +
-'                <table width="100%" cellpadding="8" cellspacing="0" border="0" style="font-size:12px; border-collapse:collapse;">' +
-'                  <thead>' +
-'                    <tr style="background:#18181b; color:#8b949e; border-bottom:1px solid #27272a; font-size:11px; text-transform:uppercase;">' +
-'                      <th align="left" style="padding-left:12px;">CLUSTER</th>' +
-'                      <th align="right">TOTAL</th>' +
-'                      <th align="right" style="color:#3b82f6;">ACCEPTED</th>' +
-'                      <th align="right" style="color:#f97316;">DEPART</th>' +
-'                      <th align="right" style="color:#ec4899;">ARRIVE</th>' +
-'                      <th align="right" style="color:#34d399;">LEAVE</th>' +
-'                    </tr>' +
-'                  </thead>' +
-'                  <tbody>';
-
-for (var clIdx = 0; clIdx < clusterList.length; clIdx++) {
-    var cObj = clusterList[clIdx];
-    html += '' +
-'                    <tr style="border-bottom:1px solid #1f1f23;">' +
-'                      <td align="left" style="padding-left:12px; font-weight:600; color:#fafafa;">' + cObj.cluster + '</td>' +
-'                      <td align="right" style="font-weight:700; color:#fafafa;">' + cObj.total + '</td>' +
-'                      <td align="right" style="font-weight:600; color:#3b82f6;">' + cObj.accepted + '</td>' +
-'                      <td align="right" style="font-weight:600; color:#f97316;">' + cObj.depart + '</td>' +
-'                      <td align="right" style="font-weight:600; color:#ec4899;">' + cObj.arrive + '</td>' +
-'                      <td align="right" style="font-weight:600; color:#34d399;">' + cObj.leave + '</td>' +
-'                    </tr>';
+function milestoneCardCell(label, value, pctVal, color, bgRgba, borderRgba) {
+    var pill = (pctVal === null) ? '' :
+        '<td align="right" valign="bottom" style="padding-bottom:3px;"><span style="font-size:11px; font-weight:700; color:' + color +
+        '; background:' + bgRgba + '; border:1px solid ' + borderRgba + '; border-radius:9999px; padding:2px 8px;">' + pctVal + '%</span></td>';
+    return '<td width="19%" valign="top" style="background:' + C.card + '; border:1px solid ' + C.border + '; border-radius:12px; padding:16px;">' +
+        '<div style="font-size:11px; font-weight:700; text-transform:uppercase; color:' + C.sub + '; margin-bottom:10px;">' + label + '</div>' +
+        '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
+        '<td align="left" style="font-size:30px; font-weight:700; color:' + C.text + '; line-height:1;">' + value + '</td>' + pill +
+        '</tr></table></td>';
 }
 
-html += '' +
-'                  </tbody>' +
-'                </table>' +
-'              </div>' +
-'            </td>' +
-'          </tr>' +
+function legendDot(color, label) {
+    return '<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:' + color + '; margin-right:6px;"></span>' + label;
+}
 
-          // 10. SECTION: FME PERFORMANCE DETAIL
-'          <tr>' +
-'            <td style="padding-bottom:24px;">' +
-'              <div style="background:#0d0d10; border:1px solid #27272a; border-radius:10px; padding:20px;">' +
-'                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">' +
-'                  <div style="font-size:14px; font-weight:600; color:#fafafa;">FME Performance Detail</div>' +
-'                  <div style="font-size:12px; color:#a1a1aa;">' + fmeDetailList.length + ' technicians dispatched in D-1</div>' +
-'                </div>' +
-'                <table width="100%" cellpadding="8" cellspacing="0" border="0" style="font-size:12px; border-collapse:collapse;">' +
-'                  <thead>' +
-'                    <tr style="background:#18181b; color:#8b949e; border-bottom:1px solid #27272a; font-size:11px; text-transform:uppercase;">' +
-'                      <th align="left" style="padding-left:12px; width:220px;">CLUSTER</th>' +
-'                      <th align="left">FME NAME</th>' +
-'                      <th align="right" style="color:#3b82f6;">ACCEPTED</th>' +
-'                      <th align="right" style="color:#f97316;">DEPART</th>' +
-'                      <th align="right" style="color:#ec4899;">ARRIVE</th>' +
-'                      <th align="right" style="color:#34d399;">LEAVE</th>' +
-'                    </tr>' +
-'                  </thead>' +
-'                  <tbody>';
+var h = [];
 
-if (fmeDetailList.length === 0) {
-    html += '<tr><td colspan="6" align="center" style="color:#71717a; padding:16px;">No FME data available.</td></tr>';
-} else {
-    var maxFme = Math.min(fmeDetailList.length, 50);
-    for (var fIdx = 0; fIdx < maxFme; fIdx++) {
-        var fObj = fmeDetailList[fIdx];
-        html += '' +
-'                    <tr style="border-bottom:1px solid #1f1f23;">' +
-'                      <td align="left" style="padding-left:12px; color:#8b949e; font-size:11px;">' + fObj.cluster + '</td>' +
-'                      <td align="left" style="font-weight:600; color:#e4e4e7;">' + fObj.fmeName + '</td>' +
-'                      <td align="right" style="font-weight:600; color:#3b82f6;">' + fObj.accepted + '</td>' +
-'                      <td align="right" style="font-weight:600; color:#f97316;">' + fObj.depart + '</td>' +
-'                      <td align="right" style="font-weight:600; color:#ec4899;">' + fObj.arrive + '</td>' +
-'                      <td align="right" style="font-weight:600; color:#34d399;">' + fObj.leave + '</td>' +
-'                    </tr>';
+h.push('<!DOCTYPE html><html><head><meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+    '<meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark">',
+    '<style>',
+    '.th{padding:10px 8px;font-size:11px;font-weight:700;text-transform:uppercase;background:' + C.head + ';color:' + C.sub + ';}',
+    '.td{padding:9px 8px;font-size:12px;color:' + C.text + ';border-bottom:1px solid ' + C.rowLine + ';}',
+    '.f11{font-size:11px;}',
+    '.mh{padding:8px 3px;font-size:10px;background:' + C.head + ';color:' + C.sub + ';}',
+    '.mhd{font-size:9px;font-weight:700;}',
+    '.mc{padding:8px 6px;font-size:10px;color:' + C.text + ';border-bottom:1px solid ' + C.rowLine + ';}',
+    '.mcd{padding:8px 3px;font-size:9px;}',
+    '.ml{white-space:nowrap;}',
+    '.w6{font-weight:600;}.w7{font-weight:700;}',
+    '.cs{color:' + C.sub + ';}.cm{color:' + C.muted + ';}.cb{color:' + C.blue + ';}.co{color:' + C.orange + ';}',
+    '.cp{color:' + C.pink + ';}.cg{color:' + C.green + ';}.cw{color:#ffffff;}.cl{color:#58a6ff;}.ce{color:#e4e4e7;}',
+    '</style>',
+    '</head>',
+    '<body style="margin:0; padding:0; background:' + C.bg + '; font-family:' + FONT + '; color:#e4e4e7;">',
+    '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:' + C.bg + ';"><tr><td align="center" style="padding:24px 12px;">',
+    '<table width="920" cellpadding="0" cellspacing="0" border="0" style="width:920px; max-width:100%;">');
+
+// ---- 1. HEADER -------------------------------------------------------
+h.push('<tr><td style="padding-bottom:18px; border-bottom:1px solid ' + C.border + ';">',
+    '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>',
+    '<td align="left" valign="top">',
+    '<div style="font-size:26px; font-weight:800; color:' + C.text + '; letter-spacing:0.5px;">MATELINE UTILIZATION DASHBOARD</div>',
+    '<div style="font-size:14px; color:' + C.sub + '; margin-top:6px;">Daily Mateline utilization and ticket acceptance monitoring</div>',
+    '</td>',
+    '<td align="right" valign="top" style="white-space:nowrap;">',
+    '<span style="display:inline-block; font-size:13px; font-weight:700; color:' + C.sub + '; background:' + C.card + '; border:1px solid ' + C.border +
+    '; border-radius:8px; padding:8px 14px;">Report Date: <span style="color:#58a6ff;">' + esc(longDateEn(targetDate)) + ' (D-1)</span></span>',
+    '</td></tr></table></td></tr>');
+h.push(spacer(16));
+
+h.push('<tr><td><span style="display:inline-block; background:' + C.card + '; border:1px solid ' + C.border +
+    '; border-radius:8px; padding:10px 16px; font-size:13px; font-weight:600; color:#58a6ff;">Active: ' +
+    esc(longDateId(startDateRange)) + ' – ' + esc(longDateId(endDateRange)) + ' | Region: All Region | Party: All Party</span></td></tr>');
+h.push(spacer(20));
+
+// ---- 2. TOP ROW: Ticket Summary | Donut | FME Acceptance Detail ----
+var summaryHtml =
+    '<div style="font-size:15px; font-weight:700; color:' + C.text + '; margin-bottom:14px;">Ticket Summary</div>' +
+    '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;"><tr>' +
+    '<td width="48%" valign="top" style="padding:12px; border-radius:8px; background:#d1eaff;">' +
+    '<div style="font-size:12px; font-weight:700; color:#0367c1; margin-bottom:14px;">Total Tickets</div>' +
+    '<div style="font-size:30px; font-weight:800; color:#0367c1; line-height:1;">' + d1Total + '</div></td>' +
+    '<td width="4%">&nbsp;</td>' +
+    '<td width="48%" valign="top" style="padding:12px; border-radius:8px; background:#daf5e6;">' +
+    '<div style="font-size:12px; font-weight:700; color:#027039; margin-bottom:14px;">Total Accepted</div>' +
+    '<div style="font-size:30px; font-weight:800; color:#027039; line-height:1;">' + d1Accepted + '</div></td>' +
+    '</tr></table>' +
+    '<div style="font-size:13px; color:' + C.sub + '; margin-bottom:4px;">Acceptance Rate</div>' +
+    '<div style="font-size:28px; font-weight:800; color:' + C.text + '; margin-bottom:8px;">' + d1Rate + '%</div>' +
+    '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#1f2937; border-radius:999px;"><tr>' +
+    '<td width="' + Math.min(100, Math.max(0, Math.round(Number(d1Rate)))) + '%" height="10" style="background:#3b82f6; border-radius:999px; font-size:0; line-height:0;">&nbsp;</td>' +
+    '<td style="font-size:0; line-height:0;">&nbsp;</td></tr></table>';
+
+var donutHtml =
+    '<div style="font-size:15px; font-weight:700; color:' + C.text + '; margin-bottom:10px;">Accepted Ticket Distribution by Party</div>' +
+    (donutHasData
+        ? imgTag(donutUrl, 300, 200, 'Accepted Ticket Distribution by Party')
+        : '<div style="padding:70px 0; text-align:center; font-size:13px; color:' + C.muted + ';">No accepted tickets found.</div>');
+
+var fmeRowsHtml = '';
+for (pi = 0; pi < PARTIES.length; pi++) {
+    var fp = fmeParty[PARTIES[pi]];
+    fmeRowsHtml += '<tr>' +
+        '<td align="left" style="padding:8px 4px; font-size:11px; font-weight:700; color:' + C.text + '; border-bottom:1px solid ' + C.rowLine + ';">' + PARTIES[pi] + '</td>' +
+        '<td align="right" style="padding:8px 4px; font-size:11px; color:' + C.text + '; border-bottom:1px solid ' + C.rowLine + ';">' + fp.totalFme + '</td>' +
+        '<td align="right" style="padding:8px 4px; font-size:11px; color:' + C.text + '; border-bottom:1px solid ' + C.rowLine + ';">' + fp.tickets + '</td>' +
+        '<td align="right" style="padding:8px 4px; font-size:11px; color:' + C.text + '; border-bottom:1px solid ' + C.rowLine + ';">' + fp.accepted + '</td>' +
+        '<td align="right" style="padding:8px 4px; font-size:11px; color:' + C.text + '; border-bottom:1px solid ' + C.rowLine + ';">' + pct(fp.accepted, fp.tickets, 2) + '%</td></tr>';
+}
+function fmeTh(label, align) {
+    return '<th align="' + align + '" style="padding:8px 4px; font-size:9px; font-weight:700; text-transform:uppercase; color:' + C.sub + '; background:' + C.head + ';">' + label + '</th>';
+}
+var fmeHtml =
+    '<div style="font-size:15px; font-weight:700; color:' + C.text + '; margin-bottom:10px;">FME Ticket Acceptance Detail</div>' +
+    '<table width="100%" cellpadding="0" cellspacing="0" border="0"><thead><tr>' +
+    fmeTh('FME Party', 'left') + fmeTh('Total FME', 'right') + fmeTh('Ticket Count', 'right') + fmeTh('Accepted Count', 'right') + fmeTh('Accept Rate (%)', 'right') +
+    '</tr></thead><tbody>' + fmeRowsHtml + '</tbody></table>';
+
+function boxCell(width, inner) {
+    return '<td width="' + width + '" valign="top" style="background:' + C.card + '; border:1px solid ' + C.border + '; border-radius:12px; padding:18px;">' + inner + '</td>';
+}
+h.push('<tr><td><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>',
+    boxCell('30%', summaryHtml), '<td width="2%">&nbsp;</td>',
+    boxCell('34%', donutHtml), '<td width="2%">&nbsp;</td>',
+    boxCell('32%', fmeHtml),
+    '</tr></table></td></tr>');
+h.push(spacer(20));
+
+// ---- 3. ACCEPT RATE BY PARTY (D-1) ----------------------------------
+h.push('<tr><td><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>');
+for (pi = 0; pi < PARTIES.length; pi++) {
+    var pd1 = d1Daily.parties[PARTIES[pi]];
+    h.push('<td width="32%" valign="top" style="background:' + C.card + '; border:1px solid ' + C.border + '; border-radius:12px; padding:16px 18px;">' +
+        '<div style="font-size:12px; font-weight:700; text-transform:uppercase; color:' + C.muted + ';">' + PARTIES[pi] + ' – D-1</div>' +
+        '<div style="font-size:30px; font-weight:800; color:#58a6ff; margin:8px 0 4px 0;">' + pct(pd1.accepted, pd1.total, 1) + '%</div>' +
+        '<div style="font-size:12px; color:' + C.muted + ';">' + pd1.accepted + ' / ' + pd1.total + ' accepted</div></td>' +
+        (pi < 2 ? '<td width="2%">&nbsp;</td>' : ''));
+}
+h.push('</tr></table></td></tr>');
+h.push(spacer(20));
+
+// ---- 4. MATELINE UTILIZATION TREND ----------------------------------
+var trendTable =
+    '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px; table-layout:auto;">' +
+    '<thead>' + dateMatrixHead('', trendDates, 'Grand Total') + '</thead><tbody>' +
+    dateMatrixRow('Ticket Count', trendTotals, grandTotal, C.text, false) +
+    dateMatrixRow('Accepted Count', trendAccepted, grandAccepted, C.text, false) +
+    dateMatrixRow('Accept Rate', (function () {
+        var arr2 = [], i2;
+        for (i2 = 0; i2 < trendRates.length; i2++) arr2.push(trendRates[i2].toFixed(2) + '%');
+        return arr2;
+    })(), pct(grandAccepted, grandTotal, 2) + '%', C.text, false) +
+    '</tbody></table>';
+
+h.push('<tr><td>', cardBox(imgTag(trendUrl, CHART_W, 420, 'Mateline Utilization Trend') + trendTable), '</td></tr>');
+h.push(spacer(20));
+
+// ---- 5. DAILY ACCEPT RATE BY PARTY ----------------------------------
+var dailyBody = '';
+for (pi = 0; pi < PARTIES.length; pi++) {
+    var vals = [], i3;
+    for (i3 = 0; i3 < partyRateSeries[PARTIES[pi]].length; i3++) vals.push(partyRateSeries[PARTIES[pi]][i3].toFixed(2) + '%');
+    dailyBody += dateMatrixRow(PARTIES[pi], vals, pct(partySumAccepted[PARTIES[pi]], partySumTotal[PARTIES[pi]], 2) + '%', C.text, false);
+}
+var overallVals = [], i4;
+for (i4 = 0; i4 < trendOverall.length; i4++) overallVals.push(trendOverall[i4].toFixed(2) + '%');
+dailyBody += dateMatrixRow('Overall Accept Rate', overallVals, pct(grandAccepted, grandTotal, 2) + '%', C.text, true);
+
+var dailyTable = '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;"><thead>' +
+    dateMatrixHead('', trendDates, 'Grand Total') + '</thead><tbody>' + dailyBody + '</tbody></table>';
+
+h.push('<tr><td>', cardBox(imgTag(dailyUrl, CHART_W, 420, 'Daily Accept Rate') + dailyTable), '</td></tr>');
+h.push(spacer(24));
+
+// ---- 6. MILESTONE UTILIZATION DASHBOARD (D-1) -----------------------
+h.push('<tr><td style="font-size:15px; font-weight:800; color:' + C.text + '; letter-spacing:0.5px; padding-bottom:12px;">MILESTONE UTILIZATION DASHBOARD</td></tr>');
+h.push('<tr><td><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>',
+    milestoneCardCell('Total Ticket', ms.total, null, C.text, '', ''), '<td width="1%">&nbsp;</td>',
+    milestoneCardCell('Total Accepted', ms.accepted, Math.round(ms.total > 0 ? ms.accepted / ms.total * 100 : 0), '#58a6ff', 'rgba(88,166,255,0.12)', 'rgba(88,166,255,0.3)'), '<td width="1%">&nbsp;</td>',
+    milestoneCardCell('Total Depart', ms.depart, Math.round(ms.total > 0 ? ms.depart / ms.total * 100 : 0), C.orange, 'rgba(249,115,22,0.12)', 'rgba(249,115,22,0.3)'), '<td width="1%">&nbsp;</td>',
+    milestoneCardCell('Total Arrive', ms.arrive, Math.round(ms.total > 0 ? ms.arrive / ms.total * 100 : 0), C.pink, 'rgba(236,72,153,0.12)', 'rgba(236,72,153,0.3)'), '<td width="1%">&nbsp;</td>',
+    milestoneCardCell('Total Leave', ms.leave, Math.round(ms.total > 0 ? ms.leave / ms.total * 100 : 0), C.green, 'rgba(52,211,153,0.12)', 'rgba(52,211,153,0.3)'),
+    '</tr></table></td></tr>');
+h.push(spacer(20));
+
+// ---- 7. 1 DAY - HOURLY TIMELINE -------------------------------------
+var hourHead = '<tr><th align="left" style="padding:10px 8px; font-size:11px; background:' + C.head + '; color:' + C.text + ';">Milestone</th>';
+for (hh = 0; hh < 24; hh += 2) {
+    hourHead += '<th align="center" style="padding:10px 2px; font-size:10px; font-weight:700; background:' + C.head + '; color:' + C.sub + ';">' + pad2(hh) + ':00</th>';
+}
+hourHead += '<th align="center" style="padding:10px 6px; font-size:11px; font-weight:700; background:' + C.head + '; color:' + C.text + ';">Total</th></tr>';
+
+function hourRow(label, field, color, grandVal, isLast) {
+    var r = '<tr><td align="left" style="padding:9px 8px; font-size:12px; font-weight:700; color:' + color + ';' +
+        (isLast ? '' : ' border-bottom:1px solid ' + C.rowLine + ';') + '">' + legendDot(color, label) + '</td>';
+    var k;
+    for (k = 0; k < 24; k += 2) {
+        r += '<td align="center" style="padding:9px 2px; font-size:12px; color:' + color + ';' +
+            (isLast ? '' : ' border-bottom:1px solid ' + C.rowLine + ';') + '">' + (hourly[k][field] + hourly[k + 1][field]) + '</td>';
     }
-    if (fmeDetailList.length > maxFme) {
-        html += '<tr><td colspan="6" align="center" style="color:#8b949e; padding:10px; font-size:11px;">... and ' + (fmeDetailList.length - maxFme) + ' more technicians</td></tr>';
-    }
+    return r + '<td align="center" style="padding:9px 6px; font-size:12px; font-weight:800; color:' + color + ';' +
+        (isLast ? '' : ' border-bottom:1px solid ' + C.rowLine + ';') + '">' + grandVal + '</td></tr>';
 }
+var hourTotalSum = 0;
+for (hh = 0; hh < 24; hh++) hourTotalSum += hourly[hh].total;
 
-html += '' +
-'                  </tbody>' +
-'                </table>' +
-'              </div>' +
-'            </td>' +
-'          </tr>' +
+var hourTable = '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;"><thead>' + hourHead + '</thead><tbody>' +
+    hourRow('Total Ticket', 'total', '#ffffff', hourTotalSum, false) +
+    hourRow('Accepted', 'accepted', C.blue, ms.accepted, false) +
+    hourRow('Depart', 'depart', C.orange, ms.depart, false) +
+    hourRow('Arrive', 'arrive', C.pink, ms.arrive, false) +
+    hourRow('Leave', 'leave', C.green, ms.leave, true) +
+    '</tbody></table>';
 
-          // FOOTER
-'          <tr>' +
-'            <td style="padding:16px 0; border-top:1px solid #27272a; text-align:center; font-size:11px; color:#71717a;">' +
-'              Generated automatically by <strong>Huawei OWS Mateline Utilization Platform</strong>' +
-'            </td>' +
-'          </tr>' +
+h.push('<tr><td>', cardBox(
+    cardHeader('1 Day - Hourly Timeline (' + targetDate + ')', hourTotalSum + ' tickets on this day') +
+    '<div style="font-size:12px; color:' + C.sub + '; margin:-8px 0 12px 0;">Distribution of tickets across 24 hours</div>' +
+    imgTag(hourlyUrl, CHART_W, 340, '1 Day Hourly Timeline') + hourTable), '</td></tr>');
+h.push(spacer(20));
 
-'        </table>' +
-'      </td>' +
-'    </tr>' +
-'  </table>' +
-'</body>' +
-'</html>';
+// ---- 8. DATE RANGE TIMELINE -----------------------------------------
+h.push('<tr><td>', cardBox(
+    cardHeader('Date Range Timeline (' + startDateRange + ' - ' + endDateRange + ')', trendDates.length + ' days in range') +
+    imgTag(rangeUrl, CHART_W, 340, 'Date Range Timeline')), '</td></tr>');
+h.push(spacer(20));
 
-// 7. Susun Payload Email
-var defaultEmailTitle = "[DAILY REPORT] Mateline Utilization " + jParts.dayName + " " + jParts.todayStr;
-var emailSubject = (body.title || body.subject || defaultEmailTitle);
+// ---- 9. CLUSTER OFFICE MILESTONE SUMMARY ----------------------------
+var clusterRows = '';
+if (clusterList.length === 0) {
+    clusterRows = '<tr><td colspan="6" align="center" style="padding:18px; font-size:13px; color:' + C.muted + ';">No cluster data available.</td></tr>';
+}
+var ci;
+for (ci = 0; ci < clusterList.length; ci++) {
+    var co = clusterList[ci];
+    clusterRows += '<tr>' + td(esc(co.name), 'left', C.text, 700) + td(co.total, 'right', C.text, 700) +
+        td(co.accepted, 'right', C.blue, 600) + td(co.depart, 'right', C.orange, 600) +
+        td(co.arrive, 'right', C.pink, 600) + td(co.leave, 'right', C.green, 600) + '</tr>';
+}
+h.push('<tr><td>', cardBox(
+    cardHeader('Cluster Office Milestone Summary', clusterList.length + ' clusters active in D-1') +
+    '<table width="100%" cellpadding="0" cellspacing="0" border="0"><thead><tr>' +
+    th('Cluster', 'left') + th('Total', 'right') + th('Accepted', 'right', C.blue) + th('Depart', 'right', C.orange) +
+    th('Arrive', 'right', C.pink) + th('Leave', 'right', C.green) +
+    '</tr></thead><tbody>' + clusterRows + '</tbody></table>'), '</td></tr>');
+h.push(spacer(20));
+
+// ---- 10. FME PERFORMANCE DETAIL (semua teknisi) ---------------------
+var fmeRows = '';
+if (fmeList.length === 0) {
+    fmeRows = '<tr><td colspan="6" align="center" style="padding:18px; font-size:13px; color:' + C.muted + ';">No FME data available.</td></tr>';
+}
+var fi;
+for (fi = 0; fi < fmeList.length; fi++) {
+    var fo = fmeList[fi];
+    fmeRows += '<tr>' + td(esc(fo.cluster), 'left', C.muted, 400, 'font-size:11px;') + td(esc(fo.name), 'left', '#e4e4e7', 600) +
+        td(fo.accepted, 'right', C.blue, 600) + td(fo.depart, 'right', C.orange, 600) +
+        td(fo.arrive, 'right', C.pink, 600) + td(fo.leave, 'right', C.green, 600) + '</tr>';
+}
+h.push('<tr><td>', cardBox(
+    cardHeader('FME Performance Detail', fmeList.length + ' technicians dispatched in D-1') +
+    '<table width="100%" cellpadding="0" cellspacing="0" border="0"><thead><tr>' +
+    th('Cluster', 'left') + th('FME Name', 'left') + th('Accepted', 'right', C.blue) + th('Depart', 'right', C.orange) +
+    th('Arrive', 'right', C.pink) + th('Leave', 'right', C.green) +
+    '</tr></thead><tbody>' + fmeRows + '</tbody></table>'), '</td></tr>');
+h.push(spacer(16));
+
+// ---- FOOTER ---------------------------------------------------------
+h.push('<tr><td align="center" style="padding:16px 0; border-top:1px solid ' + C.border + '; font-size:11px; color:#71717a;">',
+    'Generated automatically by <strong>Huawei OWS Mateline Utilization Platform</strong> &middot; Data: ' + esc(targetDate) + ' (D-1)',
+    '</td></tr>');
+
+h.push('</table></td></tr></table></body></html>');
+
+var html = h.join('');
+
+// ======================================================================
+// 7. KIRIM EMAIL
+// ======================================================================
+var defaultTitle = "[DAILY REPORT] Mateline Utilization " + dayNameOf(todayStr) + " " + todayStr;
+var emailSubject = pick(body.title || body.subject, defaultTitle);
 
 var emailPayload = {
     "title": String(emailSubject),
@@ -963,24 +849,21 @@ var emailPayload = {
     "server_id": ""
 };
 
-// 8. Eksekusi Pengiriman Email
-var serviceUrl = "/adc-service/rest/v1/services/System/email/email_send_create";
-var result = ServiceInvoker.post(serviceUrl, emailPayload);
-
-if (logger && logger.info) {
-    logger.info("Email sent to " + sendTo + ", response=" + JSON.stringify(result));
-}
+var result = ServiceInvoker.post(EMAIL_SERVICE, emailPayload);
+logInfo("Email sent to " + sendTo + ", response=" + JSON.stringify(result));
 
 return {
     success: true,
+    title: emailSubject,
     target_date: targetDate,
+    range: startDateRange + " - " + endDateRange,
     recipient: sendTo,
     summary: {
-        total_tickets_d1: totalTicketsD1,
-        accepted_d1: countAcceptedD1,
-        accept_rate_d1: acceptRateD1 + "%",
-        range_tickets: rangeTotalTickets,
-        range_accepted: rangeAccepted
+        total_tickets_d1: d1Total,
+        accepted_d1: d1Accepted,
+        accept_rate_d1: d1Rate + "%",
+        technicians_listed: fmeList.length,
+        clusters: clusterList.length
     },
     send_result: result
 };
