@@ -18,31 +18,26 @@ var body = (typeof message !== "undefined" && message && message.body)
     ? message.body 
     : ((typeof input !== "undefined" && input && input.body) ? input.body : (typeof input !== "undefined" ? input : {}));
 
-var sendTo = body.email_to || body.send_to || body.sendto || body.emails || "";
+var DEFAULT_RECEIVER = "anderasinggih1@gmail.com";
+var sendTo = (body.email_to || body.send_to || body.sendto || body.emails || DEFAULT_RECEIVER);
 var todayStr = new Date().toISOString().substring(0, 10);
 
-// 2. Susun 9 field persis sama dengan payload yang SUKSES kamu tes di debugger OWS
+// 2. Susun payload persis seperti yang sukses kamu jalankan di debugger
 var emailPayload = {
     "title": String(body.title || body.subject || ("【Report】Corrective Maintenance & Mateline Dashboard - " + todayStr)),
     "email_to": String(sendTo),
-    "email_bcc": String(body.email_bcc || ""),
-    "email_cc": String(body.email_cc || ""),
-    "email_from": String(body.email_from || ""),
+    "email_bcc": "",
+    "email_cc": "",
+    "email_from": "",
     "content": String(body.content || "Report monitoring Mateline Utilization"),
-    "data_type": String(body.data_type || ""),
-    "attachment": String(body.attachment || ""),
-    "server_id": String(body.server_id || "")
+    "data_type": "",
+    "attachment": "",
+    "server_id": ""
 };
 
-// 3. Eksekusi menggunakan ServiceInvoker.invoke (standar OWS internal service)
+// 3. Eksekusi ke service System/email/email_send_create
 var serviceUrl = "/adc-service/rest/v1/services/System/email/email_send_create";
-var result;
-try {
-    result = ServiceInvoker.invoke(serviceUrl, emailPayload);
-} catch (e) {
-    if (logger && logger.error) logger.error("invoke error, trying post: " + e.message);
-    result = ServiceInvoker.post(serviceUrl, emailPayload);
-}
+var result = ServiceInvoker.post(serviceUrl, emailPayload);
 
 if (logger && logger.info) {
     logger.info("email_send_create response=" + JSON.stringify(result));
