@@ -1,12 +1,6 @@
 /**
  * OWS Service: corrective_send_email_report / emailreport
  * Direct Service: /adc-service/rest/v1/services/System/email/email_send_create
- * 
- * Schema:
- * *title    : string (mandatory)
- * *content  : string (mandatory)
- * email_to  : string
- * data_type : string ("text/html;charset=utf-8")
  */
 
 var logger = (typeof JsLogger !== 'undefined' && JsLogger && JsLogger.serviceDebugLogger) 
@@ -20,25 +14,23 @@ var body = (typeof message !== "undefined" && message && message.body)
 
 var todayStr = new Date().toISOString().substring(0, 10);
 
-// 2. Susun payload persis sesuai schema System/email/email_send_create
+// Default target penerima: kirim ke email kantor & email gmail
+var defaultEmailTo = "andera.singgih.pratama@h-partners.com,anderasinggih1@gmail.com";
+
+// 2. Susun payload persis sesuai struktur yang terbukti sukses 100%
 var emailPayload = {
-    // Mandatory (*)
-    title: (body.title || body.subject || ("【Report】Corrective Maintenance & Mateline Dashboard - " + todayStr)),
-    content: body.content || "<p>Dear Team,<br><br>Berikut adalah ringkasan monitoring Mateline Utilization Dashboard.<br>Report ini dibuat secara otomatis dari OWS System.</p>",
-    
-    // Target Receiver
-    email_to: (body.email_to || body.emails || "andera.singgih.pratama@h-partners.com"),
-    data_type: body.data_type || "text/html;charset=utf-8"
+    "title": body.title || body.subject || ("【Report】Corrective Maintenance & Mateline Dashboard - " + todayStr),
+    "email_to": body.email_to || body.emails || defaultEmailTo,
+    "email_bcc": body.email_bcc || "",
+    "email_cc": body.email_cc || "",
+    "email_from": body.email_from || "",
+    "content": body.content || "<p>Dear Team,<br><br>Berikut adalah ringkasan monitoring Mateline Utilization Dashboard.<br>Report ini dibuat secara otomatis dari OWS System.</p>",
+    "data_type": body.data_type || "text/html;charset=utf-8",
+    "attachment": body.attachment || "",
+    "server_id": body.server_id || ""
 };
 
-// Optional fields - hanya sertakan jika ada nilainya
-if (body.email_cc) emailPayload.email_cc = String(body.email_cc).trim();
-if (body.email_bcc) emailPayload.email_bcc = String(body.email_bcc).trim();
-if (body.email_from) emailPayload.email_from = String(body.email_from).trim();
-if (body.server_id) emailPayload.server_id = parseInt(body.server_id, 10);
-if (body.attachment) emailPayload.attachment = body.attachment;
-
-// 3. Eksekusi langsung ke endpoint System/email/email_send_create
+// 3. Eksekusi ke service System/email/email_send_create
 var serviceUrl = "/adc-service/rest/v1/services/System/email/email_send_create";
 var result = ServiceInvoker.post(serviceUrl, emailPayload);
 
