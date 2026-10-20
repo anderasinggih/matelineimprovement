@@ -50,7 +50,13 @@ function getJakartaDateParts() {
     var min = ("0" + nowJakarta.getUTCMinutes()).slice(-2);
     var ss = ("0" + nowJakarta.getUTCSeconds()).slice(-2);
 
+    var todayYyyy = nowJakarta.getUTCFullYear();
+    var todayMm = ("0" + (nowJakarta.getUTCMonth() + 1)).slice(-2);
+    var todayDd = ("0" + nowJakarta.getUTCDate()).slice(-2);
+
     return {
+        todayStr: todayYyyy + "-" + todayMm + "-" + todayDd,
+        dayName: dayName,
         d1Str: yyyy + "-" + mm + "-" + dd,
         monthStartStr: yyyy + "-" + mm + "-01",
         year: yyyy,
@@ -233,25 +239,22 @@ var rangeDepartPct = rangeTotalTickets > 0 ? Math.round((rangeDepart / rangeTota
 var rangeArrivePct = rangeTotalTickets > 0 ? Math.round((rangeArrive / rangeTotalTickets) * 100) : 0;
 var rangeLeavePct = rangeTotalTickets > 0 ? Math.round((rangeLeave / rangeTotalTickets) * 100) : 0;
 
-// FME Ticket Acceptance Detail (Tabel FME Party)
-var fmePartySummary = {
-    'Telkom Akses': { totalFme: 36, ticketCount: 0, acceptedCount: 0, acceptRate: '0.00' },
-    'Persada': { totalFme: 37, ticketCount: 0, acceptedCount: 0, acceptRate: '0.00' },
-    'Mandau': { totalFme: 12, ticketCount: 0, acceptedCount: 0, acceptRate: '0.00' }
-};
-
-for (var fs = 0; fs < fmeStatusRows.length; fs++) {
-    var fRow = fmeStatusRows[fs];
-    var pName = fRow.party_name;
-    if (fmePartySummary[pName]) {
-        // Increment if status rows available
-    }
+// FME Ticket Acceptance Detail (Tabel FME Party - 100% Dynamic dari API)
+var fmePartySummary = {};
+for (var cp = 0; cp < CM_PARTY_ORDER.length; cp++) {
+    fmePartySummary[CM_PARTY_ORDER[cp]] = {
+        totalFme: 0,
+        ticketCount: 0,
+        acceptedCount: 0,
+        acceptRate: '0.00'
+    };
 }
 
 for (var fm = 0; fm < fmeManagementRows.length; fm++) {
     var mRow = fmeManagementRows[fm];
     var mp = mRow.party_name;
     if (fmePartySummary[mp]) {
+        fmePartySummary[mp].totalFme++;
         fmePartySummary[mp].ticketCount += parseInt(mRow.count_ticket_id || 0, 10);
         fmePartySummary[mp].acceptedCount += parseInt(mRow.count_accept_time || 0, 10);
     }
@@ -259,7 +262,12 @@ for (var fm = 0; fm < fmeManagementRows.length; fm++) {
 
 for (var pKey in fmePartySummary) {
     var pObj = fmePartySummary[pKey];
-    if (pObj.ticketCount === 0) {
+    if (pObj.totalFme === 0 && fmeStatusRows.length > 0) {
+        for (var fs = 0; fs < fmeStatusRows.length; fs++) {
+            if (fmeStatusRows[fs].party_name === pKey) pObj.totalFme++;
+        }
+    }
+    if (pObj.ticketCount === 0 && partyD1[pKey]) {
         pObj.ticketCount = partyD1[pKey].total;
         pObj.acceptedCount = partyD1[pKey].accepted;
     }
@@ -940,7 +948,8 @@ html += '' +
 '</html>';
 
 // 7. Susun Payload Email
-var emailSubject = (body.title || body.subject || ("【Report】Mateline Utilization Dashboard - " + targetDate));
+var defaultEmailTitle = "[DAILY REPORT] Mateline Utilization " + jParts.dayName + " " + jParts.todayStr;
+var emailSubject = (body.title || body.subject || defaultEmailTitle);
 
 var emailPayload = {
     "title": String(emailSubject),
