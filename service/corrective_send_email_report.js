@@ -35,6 +35,7 @@ function logError(msg) { if (logger && logger.error) logger.error(msg); }
 var SUMMARY_SERVICE = "/adc-service/rest/v1/services/gde_dashboard/corrective_maintenance_dashboard/corrective_dashboard_summary_get";
 var EMAIL_SERVICE = "/adc-service/rest/v1/services/System/email/email_send_create";
 var DEFAULT_RECEIVER = "anderasinggih1@gmail.com";
+var DEFAULT_CC = "winky.harun.rosyid@h-partners.com";
 
 var PARTIES = ['Telkom Akses', 'Persada', 'Mandau'];
 var PARTY_COLORS = { 'Telkom Akses': '#c8102e', 'Persada': '#31b5c6', 'Mandau': '#62b230' };
@@ -120,6 +121,7 @@ var body = (typeof message !== "undefined" && message && message.body)
 function pick(v, fallback) { return (v && String(v).trim()) ? String(v).trim() : fallback; }
 
 var sendTo = pick(body.email_to || body.send_to || body.sendto || body.emails, DEFAULT_RECEIVER);
+var CC_RECIPIENTS = pick(body.email_cc || body.cc, DEFAULT_CC);
 var targetDate = pick(body.date, d1Default);                       // tanggal laporan (D-1)
 var endDateRange = pick(body.end_date, targetDate);
 var startDateRange = pick(body.start_date, targetDate.substring(0, 8) + '01');   // tgl 1 bulan berjalan
@@ -526,12 +528,12 @@ function spacer(h) { return '<tr><td height="' + h + '" style="font-size:0; line
 
 function cardBox(inner) {
     return '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:' + C.card +
-        '; border:1px solid ' + C.border + '; border-radius:12px;"><tr><td style="padding:20px;">' + inner + '</td></tr></table>';
+        '; border:1px solid ' + C.border + '; border-radius:12px;"><tr><td style="padding:16px;">' + inner + '</td></tr></table>';
 }
 
 function cardHeader(title, subtitle) {
     return '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:14px;"><tr>' +
-        '<td align="left" style="font-size:15px; font-weight:700; color:' + C.text + ';">' + esc(title) + '</td>' +
+        '<td align="left" style="font-size:14px; font-weight:600; color:' + C.text + ';">' + esc(title) + '</td>' +
         '<td align="right" style="font-size:12px; color:' + C.sub + ';">' + esc(subtitle || '') + '</td></tr></table>';
 }
 
@@ -576,14 +578,13 @@ function dateMatrixRow(label, values, grand, color, boldLabel) {
 }
 
 function milestoneCardCell(label, value, pctVal, color, bgRgba, borderRgba) {
+    // Pill inline di samping angka (seperti dashboard: value 28px + pct 13px/600, padding 2px 8px)
     var pill = (pctVal === null) ? '' :
-        '<td align="right" valign="bottom" style="padding-bottom:3px;"><span style="font-size:11px; font-weight:700; color:' + color +
-        '; background:' + bgRgba + '; border:1px solid ' + borderRgba + '; border-radius:9999px; padding:2px 8px;">' + pctVal + '%</span></td>';
-    return '<td width="19%" valign="top" style="background:' + C.card + '; border:1px solid ' + C.border + '; border-radius:12px; padding:16px;">' +
-        '<div style="font-size:11px; font-weight:700; text-transform:uppercase; color:' + C.sub + '; margin-bottom:10px;">' + label + '</div>' +
-        '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
-        '<td align="left" style="font-size:30px; font-weight:700; color:' + C.text + '; line-height:1;">' + value + '</td>' + pill +
-        '</tr></table></td>';
+        '&nbsp;&nbsp;<span style="display:inline-block; vertical-align:middle; white-space:nowrap; font-size:13px; line-height:18px; font-weight:600; color:' + color +
+        '; background:' + bgRgba + '; border:1px solid ' + borderRgba + '; border-radius:9999px; padding:1px 8px;">' + pctVal + '%</span>';
+    return '<td width="19%" valign="top" style="background:' + C.card + '; border:1px solid ' + C.border + '; border-radius:10px; padding:16px 16px;">' +
+        '<div style="font-size:12px; font-weight:600; letter-spacing:0.5px; text-transform:uppercase; color:' + C.sub + '; margin-bottom:12px;">' + label + '</div>' +
+        '<div style="white-space:nowrap; font-size:28px; font-weight:700; color:' + C.text + '; line-height:28px;">' + value + pill + '</div></td>';
 }
 
 function legendDot(color, label) {
@@ -617,7 +618,7 @@ h.push('<!DOCTYPE html><html><head><meta charset="utf-8">',
 h.push('<tr><td style="padding-bottom:18px; border-bottom:1px solid ' + C.border + ';">',
     '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>',
     '<td align="left" valign="top">',
-    '<div style="font-size:26px; font-weight:800; color:' + C.text + '; letter-spacing:0.5px;">MATELINE UTILIZATION DASHBOARD</div>',
+    '<div style="font-size:24px; font-weight:700; color:' + C.text + ';">MATELINE UTILIZATION DASHBOARD</div>',
     '<div style="font-size:14px; color:' + C.sub + '; margin-top:6px;">Daily Mateline utilization and ticket acceptance monitoring</div>',
     '</td>',
     '<td align="right" valign="top" style="white-space:nowrap;">',
@@ -633,15 +634,15 @@ h.push(spacer(20));
 
 // ---- 2. TOP ROW: Ticket Summary | Donut | FME Acceptance Detail ----
 var summaryHtml =
-    '<div style="font-size:15px; font-weight:700; color:' + C.text + '; margin-bottom:14px;">Ticket Summary</div>' +
+    '<div style="font-size:14px; font-weight:600; color:' + C.text + '; margin-bottom:12px;">Ticket Summary</div>' +
     '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;"><tr>' +
     '<td width="48%" valign="top" style="padding:12px; border-radius:8px; background:#d1eaff;">' +
     '<div style="font-size:12px; font-weight:700; color:#0367c1; margin-bottom:14px;">Total Tickets</div>' +
-    '<div style="font-size:30px; font-weight:800; color:#0367c1; line-height:1;">' + d1Total + '</div></td>' +
+    '<div style="font-size:28px; font-weight:700; color:#0367c1; line-height:1;">' + d1Total + '</div></td>' +
     '<td width="4%">&nbsp;</td>' +
     '<td width="48%" valign="top" style="padding:12px; border-radius:8px; background:#daf5e6;">' +
     '<div style="font-size:12px; font-weight:700; color:#027039; margin-bottom:14px;">Total Accepted</div>' +
-    '<div style="font-size:30px; font-weight:800; color:#027039; line-height:1;">' + d1Accepted + '</div></td>' +
+    '<div style="font-size:28px; font-weight:700; color:#027039; line-height:1;">' + d1Accepted + '</div></td>' +
     '</tr></table>' +
     '<div style="font-size:13px; color:' + C.sub + '; margin-bottom:4px;">Acceptance Rate</div>' +
     '<div style="font-size:28px; font-weight:800; color:' + C.text + '; margin-bottom:8px;">' + d1Rate + '%</div>' +
@@ -650,7 +651,7 @@ var summaryHtml =
     '<td style="font-size:0; line-height:0;">&nbsp;</td></tr></table>';
 
 var donutHtml =
-    '<div style="font-size:15px; font-weight:700; color:' + C.text + '; margin-bottom:10px;">Accepted Ticket Distribution by Party</div>' +
+    '<div style="font-size:14px; font-weight:600; color:' + C.text + '; margin-bottom:12px;">Accepted Ticket Distribution by Party</div>' +
     (donutHasData
         ? imgTag(donutUrl, 300, 200, 'Accepted Ticket Distribution by Party')
         : '<div style="padding:70px 0; text-align:center; font-size:13px; color:' + C.muted + ';">No accepted tickets found.</div>');
@@ -669,13 +670,13 @@ function fmeTh(label, align) {
     return '<th align="' + align + '" style="padding:8px 4px; font-size:9px; font-weight:700; text-transform:uppercase; color:' + C.sub + '; background:' + C.head + ';">' + label + '</th>';
 }
 var fmeHtml =
-    '<div style="font-size:15px; font-weight:700; color:' + C.text + '; margin-bottom:10px;">FME Ticket Acceptance Detail</div>' +
+    '<div style="font-size:14px; font-weight:600; color:' + C.text + '; margin-bottom:12px;">FME Ticket Acceptance Detail</div>' +
     '<table width="100%" cellpadding="0" cellspacing="0" border="0"><thead><tr>' +
     fmeTh('FME Party', 'left') + fmeTh('Total FME', 'right') + fmeTh('Ticket Count', 'right') + fmeTh('Accepted Count', 'right') + fmeTh('Accept Rate (%)', 'right') +
     '</tr></thead><tbody>' + fmeRowsHtml + '</tbody></table>';
 
 function boxCell(width, inner) {
-    return '<td width="' + width + '" valign="top" style="background:' + C.card + '; border:1px solid ' + C.border + '; border-radius:12px; padding:18px;">' + inner + '</td>';
+    return '<td width="' + width + '" valign="top" style="background:' + C.card + '; border:1px solid ' + C.border + '; border-radius:12px; padding:16px;">' + inner + '</td>';
 }
 h.push('<tr><td><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>',
     boxCell('30%', summaryHtml), '<td width="2%">&nbsp;</td>',
@@ -688,9 +689,9 @@ h.push(spacer(20));
 h.push('<tr><td><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>');
 for (pi = 0; pi < PARTIES.length; pi++) {
     var pd1 = d1Daily.parties[PARTIES[pi]];
-    h.push('<td width="32%" valign="top" style="background:' + C.card + '; border:1px solid ' + C.border + '; border-radius:12px; padding:16px 18px;">' +
+    h.push('<td width="32%" valign="top" style="background:' + C.card + '; border:1px solid ' + C.border + '; border-radius:10px; padding:16px;">' +
         '<div style="font-size:12px; font-weight:700; text-transform:uppercase; color:' + C.muted + ';">' + PARTIES[pi] + ' – D-1</div>' +
-        '<div style="font-size:30px; font-weight:800; color:#58a6ff; margin:8px 0 4px 0;">' + pct(pd1.accepted, pd1.total, 1) + '%</div>' +
+        '<div style="font-size:28px; font-weight:700; color:#58a6ff; margin:6px 0 4px 0;">' + pct(pd1.accepted, pd1.total, 1) + '%</div>' +
         '<div style="font-size:12px; color:' + C.muted + ';">' + pd1.accepted + ' / ' + pd1.total + ' accepted</div></td>' +
         (pi < 2 ? '<td width="2%">&nbsp;</td>' : ''));
 }
@@ -731,7 +732,7 @@ h.push('<tr><td>', cardBox(imgTag(dailyUrl, CHART_W, 420, 'Daily Accept Rate') +
 h.push(spacer(24));
 
 // ---- 6. MILESTONE UTILIZATION DASHBOARD (D-1) -----------------------
-h.push('<tr><td style="font-size:15px; font-weight:800; color:' + C.text + '; letter-spacing:0.5px; padding-bottom:12px;">MILESTONE UTILIZATION DASHBOARD</td></tr>');
+h.push('<tr><td style="font-size:14px; font-weight:700; color:' + C.text + '; letter-spacing:0.5px; padding-bottom:12px;">MILESTONE UTILIZATION DASHBOARD</td></tr>');
 h.push('<tr><td><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>',
     milestoneCardCell('Total Ticket', ms.total, null, C.text, '', ''), '<td width="1%">&nbsp;</td>',
     milestoneCardCell('Total Accepted', ms.accepted, Math.round(ms.total > 0 ? ms.accepted / ms.total * 100 : 0), '#58a6ff', 'rgba(88,166,255,0.12)', 'rgba(88,166,255,0.3)'), '<td width="1%">&nbsp;</td>',
@@ -841,7 +842,7 @@ var emailPayload = {
     "title": String(emailSubject),
     "email_to": String(sendTo),
     "email_bcc": "",
-    "email_cc": "",
+    "email_cc": CC_RECIPIENTS,
     "email_from": "",
     "content": html,
     "data_type": "text/html;charset=utf-8",
