@@ -1,6 +1,12 @@
 /**
  * OWS Service: corrective_send_email_report / emailreport
  * Direct Service: /adc-service/rest/v1/services/System/email/email_send_create
+ * 
+ * Hanya 4 field bersih:
+ * 1. title
+ * 2. email_to
+ * 3. content
+ * 4. data_type
  */
 
 var logger = (typeof JsLogger !== 'undefined' && JsLogger && JsLogger.serviceDebugLogger) 
@@ -12,11 +18,10 @@ var body = (typeof message !== "undefined" && message && message.body)
     ? message.body 
     : ((typeof input !== "undefined" && input && input.body) ? input.body : (typeof input !== "undefined" ? input : {}));
 
-// Ambil input sendto / email_to manual dari user (prioritas utama)
 var sendTo = body.email_to || body.send_to || body.sendto || body.emails || "";
 var todayStr = new Date().toISOString().substring(0, 10);
 
-// 2. Susun payload dasar yang wajib & pasti ada isinya
+// 2. Susun HANYA 4 field persis tanpa atribut tambahan apapun
 var emailPayload = {
     "title": body.title || body.subject || ("【Report】Corrective Maintenance & Mateline Dashboard - " + todayStr),
     "email_to": sendTo,
@@ -24,14 +29,7 @@ var emailPayload = {
     "data_type": body.data_type || "text/html;charset=utf-8"
 };
 
-// Hanya tambahkan field opsional jika benar-benar ada isinya (HINDARI string kosong "")
-if (body.email_cc && String(body.email_cc).trim()) emailPayload.email_cc = String(body.email_cc).trim();
-if (body.email_bcc && String(body.email_bcc).trim()) emailPayload.email_bcc = String(body.email_bcc).trim();
-if (body.email_from && String(body.email_from).trim()) emailPayload.email_from = String(body.email_from).trim();
-if (body.attachment && String(body.attachment).trim()) emailPayload.attachment = body.attachment;
-if (body.server_id && !isNaN(parseInt(body.server_id, 10))) emailPayload.server_id = parseInt(body.server_id, 10);
-
-// 3. Eksekusi ke service System/email/email_send_create
+// 3. Eksekusi langsung ke endpoint System/email/email_send_create
 var serviceUrl = "/adc-service/rest/v1/services/System/email/email_send_create";
 var result = ServiceInvoker.post(serviceUrl, emailPayload);
 
