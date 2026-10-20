@@ -12,15 +12,14 @@ var body = (typeof message !== "undefined" && message && message.body)
     ? message.body 
     : ((typeof input !== "undefined" && input && input.body) ? input.body : (typeof input !== "undefined" ? input : {}));
 
+// Ambil input sendto / email_to manual dari user (prioritas utama)
+var sendTo = body.email_to || body.send_to || body.sendto || body.emails || "";
 var todayStr = new Date().toISOString().substring(0, 10);
-
-// Default target penerima: kirim ke email kantor & email gmail
-var defaultEmailTo = "andera.singgih.pratama@h-partners.com,anderasinggih1@gmail.com";
 
 // 2. Susun payload persis sesuai struktur yang terbukti sukses 100%
 var emailPayload = {
     "title": body.title || body.subject || ("【Report】Corrective Maintenance & Mateline Dashboard - " + todayStr),
-    "email_to": body.email_to || body.emails || defaultEmailTo,
+    "email_to": sendTo,
     "email_bcc": body.email_bcc || "",
     "email_cc": body.email_cc || "",
     "email_from": body.email_from || "",
