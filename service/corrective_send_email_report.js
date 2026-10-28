@@ -799,7 +799,7 @@ function makeOnsiteDailyChart(vendorName) {
             ]
         },
         options: {
-            title: titleCfg(vendorName + ' - Daily Lifecycle Stage & Onsite'),
+            title: { display: false },
             legend: { position: 'bottom', labels: { fontColor: '#c9d1d9', fontSize: 9, boxWidth: 9, padding: 6 } },
             scales: {
                 xAxes: [{ ticks: { fontColor: axisFont, fontSize: 8 }, gridLines: { color: gridColor, display: false } }],
@@ -1012,23 +1012,7 @@ function buildFmeResponseSection(startDateRange, endDateRange, fmePerfParty, fme
 }
 
 function buildMorningOnsiteSection(startDateRange, endDateRange, onsitePersadaUrl, trendDates, onsiteVendorDaily, onsiteVendorSummary) {
-    function onsiteCard(title, subtitle, imgUrl, alt) {
-        return '<div style="background:' + C.card + '; border:1px solid ' + C.border + '; border-radius:8px; padding:12px; margin-bottom:14px;">' +
-            '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:6px;"><tr>' +
-            '<td align="left" style="font-size:12px; font-weight:700; color:#fafafa;">' + esc(title) + '</td>' +
-            '<td align="right" style="font-size:10px; color:' + C.muted + ';">' + esc(subtitle) + '</td>' +
-            '</tr></table>' +
-            imgTag(imgUrl, 880, 280, alt) +
-            '</div>';
-    }
-
     var persadaSummary = onsiteVendorSummary['Persada'] || { total: 0, arrived: 0, rate: 0 };
-    var stack1ColHtml = onsiteCard(
-        'Persada - Daily Lifecycle Stage & Onsite',
-        'Period: ' + startDateRange + ' - ' + endDateRange + ' | Total: ' + persadaSummary.total + ' | Arrived: ' + persadaSummary.arrived + ' (' + persadaSummary.rate.toFixed(1) + '%)',
-        onsitePersadaUrl,
-        'Persada Daily Trend'
-    );
 
     // Daily Arrive Rate Matrix Table (Khusus Persada sesuai permintaan)
     var persadaVals = [];
@@ -1045,9 +1029,9 @@ function buildMorningOnsiteSection(startDateRange, endDateRange, onsitePersadaUr
         dateMatrixHead('Vendor', trendDates, 'Grand Total') + '</thead><tbody>' + onsiteDailyRows + '</tbody></table>';
 
     return '<tr><td>' + cardBox(
-        cardHeader('Morning Onsite Performance - Persada', 'Period: ' + startDateRange + ' - ' + endDateRange + ' | Total: ' + persadaSummary.total + ' | Arrived: ' + persadaSummary.arrived + ' (' + persadaSummary.rate.toFixed(1) + '%)') +
-        stack1ColHtml +
-        '<div style="font-size:12px; font-weight:700; color:' + C.text + '; margin:16px 0 6px 0;">Daily Arrive Rate Trend - Persada</div>' +
+        cardHeader('Morning Onsite Performance &ndash; Persada', 'Period: ' + startDateRange + ' - ' + endDateRange + ' | Total: ' + persadaSummary.total + ' | Arrived: ' + persadaSummary.arrived + ' (' + persadaSummary.rate.toFixed(1) + '%)') +
+        imgTag(onsitePersadaUrl, 880, 280, 'Persada Daily Trend') +
+        '<div style="font-size:12px; font-weight:700; color:' + C.text + '; margin:18px 0 6px 0;">Daily Arrive Rate Trend &ndash; Persada</div>' +
         onsiteDailyTable) + '</td></tr>' + spacer(24);
 }
 
