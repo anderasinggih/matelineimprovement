@@ -58,7 +58,7 @@ var CM_PARTY_ORDER = ['Telkom Akses', 'Persada', 'Mandau'];
 
 function getTicketParty(item) {
     if (!item) return '';
-    var party = String(item.party_name || '').trim();
+    var party = String(item.party_name || item.contractor_name || '').trim();
     if (CM_PARTY_ORDER.indexOf(party) === -1) return '';
     return party;
 }
@@ -199,7 +199,7 @@ function loadCmTickets() {
         var loadingDiv = document.createElement('div');
         loadingDiv.style.color = '#6c757d';
         loadingDiv.style.padding = '12px';
-        loadingDiv.textContent = 'Memuat data real dari server...';
+        loadingDiv.textContent = 'Loading real data from server...';
         container.appendChild(loadingDiv);
     }
 
@@ -209,7 +209,7 @@ function loadCmTickets() {
         "start_date": defaultRange.start,
         "end_date": defaultRange.end,
         "start": 0,
-        "limit": 10000
+        "limit": 50000
     };
 
     if (typeof MessageProcessor !== 'undefined') {
@@ -223,11 +223,11 @@ function loadCmTickets() {
                 parseAndRenderCm(res);
             },
             error: function (err) {
-                showCmError('Gagal memuat data: ' + (err.message || 'Error Service'));
+                showCmError('Failed to load data: ' + (err.message || 'Service Error'));
             }
         });
     } else {
-        showCmError('MessageProcessor OWS tidak ditemukan di browser context.');
+        showCmError('OWS MessageProcessor not found in browser context.');
     }
 }
 
@@ -373,12 +373,9 @@ function applyCmFilters(isReset) {
             alert('Start Date cannot be later than End Date.');
             return;
         }
-        var startMs = new Date((startInput + ' 00:00:00').replace(/-/g, '/')).getTime();
-        var endMs = new Date((endInput + ' 23:59:59').replace(/-/g, '/')).getTime();
         filtered = filtered.filter(function (t) {
-            if (!t.createtime) return false;
-            var tMs = new Date(t.createtime.replace(/-/g, '/')).getTime();
-            return tMs >= startMs && tMs <= endMs;
+            var cDate = cmGetTicketDate(t);
+            return cDate >= startInput && cDate <= endInput;
         });
     }
 
@@ -416,10 +413,16 @@ function applyCmFilters(isReset) {
 
     renderCmSnapshotToggle();
 
-    renderCmDashboard(filtered);
+    try {
+        renderCmDashboard(filtered);
+    } catch (e) {
+        console.error('renderCmDashboard error:', e);
+    }
     loadCmAcceptRateData();
     loadCmFmeUsersData();
     renderCmTicketSummary();
+    renderFmeResponseArrivalSection(filtered);
+    renderCmMorningOnsiteSection(filtered);
 }
 
 function resetCmFilters() {
@@ -593,7 +596,7 @@ function exportCmTickets() {
     }
 
     if (typeof MessageProcessor === 'undefined') {
-        alert('MessageProcessor OWS tidak ditemukan di browser context.');
+        alert('OWS MessageProcessor not found in browser context.');
         return;
     }
 
@@ -674,29 +677,27 @@ function selectCmDashboardDate(date) {
 }
 
 function renderCmDashboard(tickets) {
-    updateCmStatCards(tickets);
-    renderCmFmeStatusOverview();
-    renderCmFmeKpiSummary();
-    renderCmFmePartyTable();
-    renderCmFaultTypeChart(tickets);
-    renderCmRootCauseChart(tickets);
-    renderCmPhaseOverviewTable(tickets);
-    renderCmRegionSummaryTable(tickets);
+    try { updateCmStatCards(tickets); } catch (e) { console.error('updateCmStatCards error:', e); }
+    try { renderCmFmeStatusOverview(); } catch (e) { console.error('renderCmFmeStatusOverview error:', e); }
+    try { renderCmFmeKpiSummary(); } catch (e) { console.error('renderCmFmeKpiSummary error:', e); }
+    try { renderCmFmePartyTable(); } catch (e) { console.error('renderCmFmePartyTable error:', e); }
+    try { renderCmFaultTypeChart(tickets); } catch (e) { console.error('renderCmFaultTypeChart error:', e); }
+    try { renderCmRootCauseChart(tickets); } catch (e) { console.error('renderCmRootCauseChart error:', e); }
+    try { renderCmPhaseOverviewTable(tickets); } catch (e) { console.error('renderCmPhaseOverviewTable error:', e); }
+    try { renderCmRegionSummaryTable(tickets); } catch (e) { console.error('renderCmRegionSummaryTable error:', e); }
 
     window.cmTicketsPagination.tickets = tickets || [];
     window.cmTicketsPagination.currentPage = 1;
-    renderCmCurrentTicketsPage();
+    try { renderCmCurrentTicketsPage(); } catch (e) { console.error('renderCmCurrentTicketsPage error:', e); }
 
-    renderCmTicketDistributionChart(tickets);
+    try { renderCmTicketDistributionChart(tickets); } catch (e) { console.error('renderCmTicketDistributionChart error:', e); }
 
-    renderCmWeeklyTicketTrend();
-    renderCmWeeklyAchievementSummary();
-    renderCmWeeklyPartyTrend();
-    renderMatelineMilestoneCards(tickets);
-    renderMatelineMilestoneHourlyChart(tickets);
-    renderMatelineMilestoneRangeChart(tickets);
-    renderMatelineMilestoneClusterSection(tickets);
-    renderMatelineMilestoneFmeSection(tickets);
+    try { renderCmWeeklyTicketTrend(); } catch (e) { console.error('renderCmWeeklyTicketTrend error:', e); }
+    try { renderCmWeeklyAchievementSummary(); } catch (e) { console.error('renderCmWeeklyAchievementSummary error:', e); }
+    try { renderCmWeeklyPartyTrend(); } catch (e) { console.error('renderCmWeeklyPartyTrend error:', e); }
+    try { renderFmeResponseArrivalSection(tickets); } catch (e) { console.error('renderFmeResponseArrivalSection error:', e); }
+    try { renderMatelineMilestoneAll(tickets); } catch (e) { console.error('renderMatelineMilestoneAll error:', e); }
+    try { renderCmMorningOnsiteSection(tickets); } catch (e) { console.error('renderCmMorningOnsiteSection error:', e); }
 }
 
 function updateCmStatCards(tickets) {
@@ -1864,6 +1865,8 @@ function toggleCmSnapshotMode() {
     renderCmTicketSummary();
     renderCmTicketDistributionChart();
     loadCmFmeUsersData();
+
+    renderMatelineMilestoneAll();
 }
 
 function renderCmSnapshotToggle() {
@@ -2295,41 +2298,11 @@ function formatDateLocalCm(date) {
 }
 
 function getCmDefaultDateRange() {
-
     var now = new Date();
-
-    var start;
-    var end;
-
-    if (now.getDate() === 1) {
-
-        start = new Date(
-            now.getFullYear(),
-            now.getMonth() - 1,
-            1
-        );
-
-        end = new Date(
-            now.getFullYear(),
-            now.getMonth(),
-            0
-        );
-
-    } else {
-
-        start = new Date(
-            now.getFullYear(),
-            now.getMonth(),
-            1
-        );
-
-        end = new Date(
-            now.getFullYear(),
-            now.getMonth(),
-            now.getDate() - 1
-        );
-
-    }
+    // Kemarin (D-1)
+    var end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    // 2 minggu terakhir (14 hari: D-14 s/d D-1 -> end - 13 hari)
+    var start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 13);
 
     return {
         start: formatDateLocalCm(start),
@@ -3213,7 +3186,16 @@ function renderCmAcceptRateSection() {
 
 function initCmAcceptRateDOM() {
     var container = document.getElementById('cmAcceptRateContainer');
-    if (!container) return;
+    if (!container) {
+        var cards = document.getElementById('cmAcceptRateCards');
+        if (cards && !document.getElementById('cmAcceptRateToggle')) {
+            var headerDiv = document.createElement('div');
+            headerDiv.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;';
+            headerDiv.innerHTML = '<div class="custom-filter-title" style="margin-bottom:0;">Accept Rate by Party</div><div id="cmAcceptRateToggle" style="display:flex; gap:8px;"></div>';
+            cards.parentNode.insertBefore(headerDiv, cards);
+        }
+        return;
+    }
 
     container.innerHTML =
         '<div class="custom-filter-card" style="margin-bottom:16px;">' +
@@ -3413,7 +3395,7 @@ function formatIndonesianDateCm(dateStr) {
     var year = parts[0];
     var monthIndex = parseInt(parts[1], 10) - 1;
     var day = parseInt(parts[2], 10);
-    var months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     return day + ' ' + months[monthIndex] + ' ' + year;
 }
 
@@ -3757,13 +3739,98 @@ window.setCmAcceptRateMode = setCmAcceptRateMode;
 window.toggleCmSnapshotMode = toggleCmSnapshotMode;
 
 /* ========================================================
+   Milestone Utilization Dashboard (Helper: Active Tickets & Target Date)
+   ======================================================== */
+function cmToWib(ts) {
+    if (!ts) return null;
+    var s = String(ts).trim();
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
+    if (!m) return null;
+    var utc = Date.UTC(
+        parseInt(m[1], 10),
+        parseInt(m[2], 10) - 1,
+        parseInt(m[3], 10),
+        parseInt(m[4], 10),
+        parseInt(m[5], 10),
+        parseInt(m[6], 10)
+    );
+    var d = new Date(utc + (7 * 3600000));
+    var y = d.getUTCFullYear();
+    var mo = ('0' + (d.getUTCMonth() + 1)).slice(-2);
+    var da = ('0' + d.getUTCDate()).slice(-2);
+    return {
+        date: y + '-' + mo + '-' + da,
+        hour: d.getUTCHours()
+    };
+}
+
+function cmGetTicketDate(t) {
+    if (!t) return '';
+    if (t.createtime) {
+        var w = cmToWib(t.createtime);
+        if (w) return w.date;
+    }
+    if (t.keycode && String(t.keycode).length >= 12) {
+        var d = String(t.keycode).substring(4, 12);
+        if (/^\d{8}$/.test(d)) {
+            return d.substring(0, 4) + '-' + d.substring(4, 6) + '-' + d.substring(6, 8);
+        }
+    }
+    return (t.createtime || '').substring(0, 10);
+}
+
+function getMatelineMilestoneTargetDate() {
+    if (window.cmAcceptRateState && window.cmAcceptRateState.selectedDate) {
+        return window.cmAcceptRateState.selectedDate;
+    }
+    var endEl = document.querySelector('.cm-filter-end-input');
+    if (endEl && endEl.value) {
+        return endEl.value;
+    }
+    var defaultRange = getCmDefaultDateRange();
+    return defaultRange.end;
+}
+
+function getMatelineMilestoneActiveTickets(tickets) {
+    var rawList = Array.isArray(tickets) ? tickets : (window.cmDashboardState.filtered || window.cmDashboardState.allTickets || []);
+
+    if (window.cmSnapshotMode === 'd1') {
+        var targetDate = getMatelineMilestoneTargetDate();
+        return rawList.filter(function (t) {
+            if (!t) return false;
+            return cmGetTicketDate(t) === targetDate;
+        });
+    }
+
+    return rawList;
+}
+
+function renderMatelineMilestoneAll(tickets) {
+    var activeTickets = Array.isArray(tickets) ? tickets : (window.cmDashboardState.filtered || window.cmDashboardState.allTickets || []);
+    renderMatelineMilestoneCards(activeTickets);
+    renderMatelineMilestoneRangeChart(activeTickets);
+    renderMatelineMilestoneClusterSection(activeTickets);
+    renderMatelineMilestoneFmeSection(activeTickets);
+}
+
+/* ========================================================
    Milestone Utilization Dashboard (Patch 1: Metric Cards)
    ======================================================== */
+function cmIsLeave(t) {
+    if (!t || !t.arrive_time) return false;
+    return !!(t.complete_time || t.exit_time || t.current_phase === 'leave' || t.out_in === 'exit');
+}
+
+function cmGetLeaveTime(t) {
+    if (!t || !t.arrive_time) return null;
+    return t.complete_time || t.exit_time || (t.current_phase === 'leave' ? t.lastupdatetime : null);
+}
+
 function renderMatelineMilestoneCards(tickets) {
     var container = document.getElementById('matelineMilestoneCardsContainer');
     if (!container) return;
 
-    var ticketList = Array.isArray(tickets) ? tickets : [];
+    var ticketList = getMatelineMilestoneActiveTickets(tickets);
     var total = ticketList.length;
 
     var accepted = 0;
@@ -3778,7 +3845,7 @@ function renderMatelineMilestoneCards(tickets) {
         if (t.accept_time) accepted++;
         if (t.depart_time) depart++;
         if (t.arrive_time) arrive++;
-        if (t.complete_time || t.exit_time || t.current_phase === 'leave' || t.out_in === 'exit') leave++;
+        if (cmIsLeave(t)) leave++;
     }
 
     var acceptedPct = total > 0 ? Math.round((accepted / total) * 100) : 0;
@@ -3786,9 +3853,12 @@ function renderMatelineMilestoneCards(tickets) {
     var arrivePct = total > 0 ? Math.round((arrive / total) * 100) : 0;
     var leavePct = total > 0 ? Math.round((leave / total) * 100) : 0;
 
+    var targetDate = getMatelineMilestoneTargetDate();
+    var modeLabel = (window.cmSnapshotMode === 'd1') ? ' (' + targetDate + ')' : '';
+
     var html = '<div class="custom-ml-cards-wrapper">' +
         '<div class="custom-ml-card">' +
-        '<div class="custom-ml-card-label">Total Ticket</div>' +
+        '<div class="custom-ml-card-label">Total Ticket' + modeLabel + '</div>' +
         '<div class="custom-ml-card-body">' +
         '<span class="custom-ml-card-value">' + total + '</span>' +
         '</div>' +
@@ -3831,211 +3901,75 @@ window.renderMatelineMilestoneCards = renderMatelineMilestoneCards;
 /* ========================================================
    Milestone Utilization Dashboard (Patch 2 & 3: Charts)
    ======================================================== */
-function renderMatelineMilestoneHourlyChart(tickets) {
-    var container = document.getElementById('matelineMilestoneHourlyChartContainer');
+function renderMilestoneBreakdownTable(
+    containerId,
+    scrollId,
+    columns,
+    totalData,
+    acceptedData,
+    departData,
+    arriveData,
+    leaveData,
+    shouldScrollRight
+) {
+    var container = document.getElementById(containerId);
     if (!container) return;
 
-    if (typeof echarts === 'undefined') {
-        setTimeout(function () { renderMatelineMilestoneHourlyChart(tickets); }, 500);
-        return;
-    }
+    var stages = [
+        { name: 'Total Ticket', color: '#ffffff', border: '1px solid #71717a', data: totalData, isTotal: true },
+        { name: 'Accepted', color: '#3b82f6', border: 'none', data: acceptedData, isTotal: false },
+        { name: 'Depart', color: '#f97316', border: 'none', data: departData, isTotal: false },
+        { name: 'Arrive', color: '#ec4899', border: 'none', data: arriveData, isTotal: false },
+        { name: 'Leave', color: '#34d399', border: 'none', data: leaveData, isTotal: false }
+    ];
 
-    var ticketList = Array.isArray(tickets) ? tickets : [];
+    var html =
+        '<div id="' + scrollId + '" class="custom-accept-rate-table-scroll" style="margin-top:14px;border-top:1px solid #1f1f23;padding-top:12px;">' +
+        '<table class="custom-noc-table">' +
+        '<thead><tr>' +
+        '<th style="min-width:140px;position:sticky;left:0;z-index:3;background:#0d0d10;">Milestone Stage</th>';
 
-    // Tentukan tanggal target 1-Day: jika filter range 1 hari gunakan itu, jika tidak ambil tanggal terakhir (End Date)
-    var startEl = document.querySelector('.cm-filter-start-input');
-    var endEl = document.querySelector('.cm-filter-end-input');
-    var targetDate = (endEl && endEl.value) ? endEl.value : '';
-
-    if (!targetDate) {
-        var defaultRange = getCmDefaultDateRange();
-        targetDate = defaultRange.end;
-    }
-
-    // Filter tiket untuk hari target tersebut
-    var dayTickets = ticketList.filter(function (t) {
-        if (!t) return false;
-        var cDate = (t.createtime || '').substring(0, 10);
-        return cDate === targetDate;
+    columns.forEach(function (col) {
+        html += '<th style="text-align:center;min-width:64px;">' + col + '</th>';
     });
 
-    // Inisialisasi 24 jam (00:00 s/d 23:00)
-    var hours = [];
-    var totalData = [];
-    var acceptedData = [];
-    var departData = [];
-    var arriveData = [];
-    var leaveData = [];
+    html += '<th style="text-align:center;min-width:90px;color:#fafafa;font-weight:700;">Grand Total</th></tr></thead><tbody>';
 
-    for (var h = 0; h < 24; h++) {
-        var hStr = (h < 10 ? '0' + h : '' + h) + ':00';
-        hours.push(hStr);
-        totalData.push(0);
-        acceptedData.push(0);
-        departData.push(0);
-        arriveData.push(0);
-        leaveData.push(0);
+    stages.forEach(function (stage) {
+        var grandTotal = 0;
+        stage.data.forEach(function (v) {
+            grandTotal += Number(v || 0);
+        });
+
+        var trStyle = stage.isTotal ? 'font-weight:700;' : '';
+        html += '<tr style="' + trStyle + '">';
+        html += '<td style="position:sticky;left:0;z-index:2;background:#0d0d10;white-space:nowrap;">' +
+            '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + stage.color + ';margin-right:8px;' + (stage.border !== 'none' ? 'border:' + stage.border + ';' : '') + '"></span>' +
+            stage.name +
+            '</td>';
+
+        stage.data.forEach(function (val) {
+            var num = Number(val || 0);
+            var cellStyle = num > 0 ? 'text-align:center;font-weight:600;color:#fafafa;' : 'text-align:center;color:#71717a;';
+            html += '<td style="' + cellStyle + '">' + num + '</td>';
+        });
+
+        html += '<td style="text-align:center;font-weight:700;color:#fafafa;background:rgba(255,255,255,0.02);">' + grandTotal + '</td>';
+        html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+
+    if (shouldScrollRight) {
+        var scrollContainer = document.getElementById(scrollId);
+        if (scrollContainer) {
+            scrollContainer.scrollLeft = scrollContainer.scrollWidth;
+        }
     }
-
-    dayTickets.forEach(function (t) {
-        if (t.createtime && t.createtime.length >= 13) {
-            var hTot = parseInt(t.createtime.substring(11, 13), 10);
-            if (!isNaN(hTot) && hTot >= 0 && hTot < 24) totalData[hTot]++;
-        }
-        if (t.accept_time && t.accept_time.length >= 13) {
-            var hAcc = parseInt(t.accept_time.substring(11, 13), 10);
-            if (!isNaN(hAcc) && hAcc >= 0 && hAcc < 24) acceptedData[hAcc]++;
-        }
-        if (t.depart_time && t.depart_time.length >= 13) {
-            var hDep = parseInt(t.depart_time.substring(11, 13), 10);
-            if (!isNaN(hDep) && hDep >= 0 && hDep < 24) departData[hDep]++;
-        }
-        if (t.arrive_time && t.arrive_time.length >= 13) {
-            var hArr = parseInt(t.arrive_time.substring(11, 13), 10);
-            if (!isNaN(hArr) && hArr >= 0 && hArr < 24) arriveData[hArr]++;
-        }
-        var lTime = t.complete_time || t.exit_time || (t.current_phase === 'leave' ? t.lastupdatetime : null);
-        if (lTime && lTime.length >= 13) {
-            var hLev = parseInt(lTime.substring(11, 13), 10);
-            if (!isNaN(hLev) && hLev >= 0 && hLev < 24) leaveData[hLev]++;
-        }
-    });
-
-    var chartDomId = 'matelineMilestoneHourlyChartCanvas';
-    container.innerHTML =
-        '<div class="custom-ml-chart-header">' +
-        '<div class="custom-ml-chart-title">1 Day - Hourly Timeline (' + targetDate + ')</div>' +
-        '<div class="custom-ml-chart-subtitle">' + dayTickets.length + ' tickets on this day</div>' +
-        '</div>' +
-        '<div class="custom-ml-scrollable-chart-wrapper">' +
-        '<div id="' + chartDomId + '" class="custom-ml-chart-canvas" style="min-width:960px;"></div>' +
-        '</div>' +
-        '<div class="custom-ml-legend-wrapper">' +
-        '<div class="custom-ml-legend-item"><span class="custom-ml-legend-color" style="background:#ffffff; border:1px solid #71717a;"></span>Total Ticket</div>' +
-        '<div class="custom-ml-legend-item"><span class="custom-ml-legend-color" style="background:#3b82f6;"></span>Accepted</div>' +
-        '<div class="custom-ml-legend-item"><span class="custom-ml-legend-color" style="background:#f97316;"></span>Depart</div>' +
-        '<div class="custom-ml-legend-item"><span class="custom-ml-legend-color" style="background:#ec4899;"></span>Arrive</div>' +
-        '<div class="custom-ml-legend-item"><span class="custom-ml-legend-color" style="background:#34d399;"></span>Leave</div>' +
-        '</div>';
-
-    var chartDom = document.getElementById(chartDomId);
-    if (!chartDom) return;
-
-    var existing = echarts.getInstanceByDom(chartDom);
-    if (existing) existing.dispose();
-
-    var chart = echarts.init(chartDom);
-    chart.setOption({
-        textStyle: {
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
-        },
-        tooltip: {
-            trigger: 'axis',
-            backgroundColor: '#18181b',
-            borderColor: '#27272a',
-            borderWidth: 1,
-            textStyle: { color: '#fafafa', fontSize: 12 },
-            padding: [8, 12]
-        },
-        grid: {
-            top: 25,
-            left: 50,
-            right: 35,
-            bottom: 25,
-            containLabel: true
-        },
-        xAxis: {
-            type: 'category',
-            boundaryGap: false,
-            data: hours,
-            axisLine: { lineStyle: { color: '#27272a' } },
-            axisLabel: { color: '#a1a1aa', fontSize: 11 }
-        },
-        yAxis: {
-            type: 'value',
-            minInterval: 1,
-            splitLine: { lineStyle: { color: '#27272a', type: 'dashed' } },
-            axisLabel: { color: '#a1a1aa', fontSize: 11 }
-        },
-        series: [
-            {
-                name: 'Total Ticket',
-                type: 'line',
-                smooth: true,
-                z: 1,
-                data: totalData,
-                lineStyle: { width: 2, color: '#ffffff', type: 'dashed' },
-                itemStyle: { color: '#ffffff' },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(255, 255, 255, 0.12)' },
-                        { offset: 1, color: 'rgba(255, 255, 255, 0.0)' }
-                    ])
-                }
-            },
-            {
-                name: 'Accepted',
-                type: 'line',
-                smooth: true,
-                z: 3,
-                data: acceptedData,
-                lineStyle: { width: 2.5, color: '#3b82f6' },
-                itemStyle: { color: '#3b82f6' },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(59, 130, 246, 0.25)' },
-                        { offset: 1, color: 'rgba(59, 130, 246, 0.0)' }
-                    ])
-                }
-            },
-            {
-                name: 'Depart',
-                type: 'line',
-                smooth: true,
-                z: 3,
-                data: departData,
-                lineStyle: { width: 2.5, color: '#f97316' },
-                itemStyle: { color: '#f97316' },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(249, 115, 22, 0.25)' },
-                        { offset: 1, color: 'rgba(249, 115, 22, 0.0)' }
-                    ])
-                }
-            },
-            {
-                name: 'Arrive',
-                type: 'line',
-                smooth: true,
-                z: 3,
-                data: arriveData,
-                lineStyle: { width: 2.5, color: '#ec4899' },
-                itemStyle: { color: '#ec4899' },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(236, 72, 153, 0.25)' },
-                        { offset: 1, color: 'rgba(236, 72, 153, 0.0)' }
-                    ])
-                }
-            },
-            {
-                name: 'Leave',
-                type: 'line',
-                smooth: true,
-                z: 3,
-                data: leaveData,
-                lineStyle: { width: 2.5, color: '#34d399' },
-                itemStyle: { color: '#34d399' },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(52, 211, 153, 0.25)' },
-                        { offset: 1, color: 'rgba(52, 211, 153, 0.0)' }
-                    ])
-                }
-            }
-        ]
-    });
 }
+
+
 
 function renderMatelineMilestoneRangeChart(tickets) {
     var container = document.getElementById('matelineMilestoneRangeChartContainer');
@@ -4079,30 +4013,20 @@ function renderMatelineMilestoneRangeChart(tickets) {
         curr.setDate(curr.getDate() + 1);
     }
 
-    // Hitung per tanggal berdasarkan milestone aktual & createtime
+    // Hitung per tanggal berdasarkan milestone aktual & createtime (WIB)
     ticketList.forEach(function (t) {
         if (!t) return;
-        if (t.createtime) {
-            var cDate = t.createtime.substring(0, 10);
-            if (dailyMap[cDate]) dailyMap[cDate].total++;
-        }
-        if (t.accept_time) {
-            var aDate = t.accept_time.substring(0, 10);
-            if (dailyMap[aDate]) dailyMap[aDate].accepted++;
-        }
-        if (t.depart_time) {
-            var dDate = t.depart_time.substring(0, 10);
-            if (dailyMap[dDate]) dailyMap[dDate].depart++;
-        }
-        if (t.arrive_time) {
-            var rDate = t.arrive_time.substring(0, 10);
-            if (dailyMap[rDate]) dailyMap[rDate].arrive++;
-        }
-        var lTime = t.complete_time || t.exit_time;
-        if (lTime) {
-            var lDate = lTime.substring(0, 10);
-            if (dailyMap[lDate]) dailyMap[lDate].leave++;
-        }
+        var wc = cmToWib(t.createtime);
+        if (wc && dailyMap[wc.date]) dailyMap[wc.date].total++;
+        var wa = cmToWib(t.accept_time);
+        if (wa && dailyMap[wa.date]) dailyMap[wa.date].accepted++;
+        var wd = cmToWib(t.depart_time);
+        if (wd && dailyMap[wd.date]) dailyMap[wd.date].depart++;
+        var wr = cmToWib(t.arrive_time);
+        if (wr && dailyMap[wr.date]) dailyMap[wr.date].arrive++;
+        var lTime = cmGetLeaveTime(t);
+        var wl = cmToWib(lTime);
+        if (wl && dailyMap[wl.date]) dailyMap[wl.date].leave++;
     });
 
     var totalData = [];
@@ -4137,7 +4061,8 @@ function renderMatelineMilestoneRangeChart(tickets) {
         '<div class="custom-ml-legend-item"><span class="custom-ml-legend-color" style="background:#f97316;"></span>Depart</div>' +
         '<div class="custom-ml-legend-item"><span class="custom-ml-legend-color" style="background:#ec4899;"></span>Arrive</div>' +
         '<div class="custom-ml-legend-item"><span class="custom-ml-legend-color" style="background:#34d399;"></span>Leave</div>' +
-        '</div>';
+        '</div>' +
+        '<div id="matelineMilestoneRangeTable"></div>';
 
     var chartDom = document.getElementById(chartDomId);
     if (!chartDom) return;
@@ -4256,9 +4181,20 @@ function renderMatelineMilestoneRangeChart(tickets) {
             }
         ]
     });
+
+    renderMilestoneBreakdownTable(
+        'matelineMilestoneRangeTable',
+        'matelineMilestoneRangeTableScroll',
+        dates,
+        totalData,
+        acceptedData,
+        departData,
+        arriveData,
+        leaveData,
+        true
+    );
 }
 
-window.renderMatelineMilestoneHourlyChart = renderMatelineMilestoneHourlyChart;
 window.renderMatelineMilestoneRangeChart = renderMatelineMilestoneRangeChart;
 
 /* ========================================================
@@ -4273,7 +4209,7 @@ function renderMatelineMilestoneClusterSection(tickets) {
     var container = document.getElementById('matelineMilestoneClusterSection');
     if (!container) return;
 
-    var ticketList = Array.isArray(tickets) ? tickets : [];
+    var ticketList = getMatelineMilestoneActiveTickets(tickets);
 
     // Agregasi per Cluster: utamakan fme_fm_office_name (hasil lookup master cmdb_fm_office via assign_to_fme), fallback ke fm_office
     var clusterMap = {};
@@ -4298,7 +4234,7 @@ function renderMatelineMilestoneClusterSection(tickets) {
         if (t.accept_time) clusterMap[cluster].accepted++;
         if (t.depart_time) clusterMap[cluster].depart++;
         if (t.arrive_time) clusterMap[cluster].arrive++;
-        if (t.complete_time || t.exit_time || t.current_phase === 'leave' || t.out_in === 'exit') {
+        if (cmIsLeave(t)) {
             clusterMap[cluster].leave++;
         }
     });
@@ -4326,10 +4262,15 @@ function renderMatelineMilestoneClusterSection(tickets) {
         window.cmMilestoneClusterState.selectedCluster = '';
     }
 
+    var targetDate = getMatelineMilestoneTargetDate();
+    var clusterSubtitle = (window.cmSnapshotMode === 'd1')
+        ? (clusterList.length + ' clusters active (' + targetDate + ')')
+        : (clusterList.length + ' clusters active');
+
     container.innerHTML =
         '<div class="custom-ml-chart-header" style="margin-bottom:16px;">' +
         '<div class="custom-ml-chart-title">Cluster Office Milestone Summary</div>' +
-        '<div class="custom-ml-chart-subtitle">' + clusterList.length + ' clusters active</div>' +
+        '<div class="custom-ml-chart-subtitle">' + clusterSubtitle + '</div>' +
         '</div>' +
         '<div class="custom-ml-cluster-grid">' +
         '<div id="matelineMilestoneClusterTableCol" class="custom-ml-cluster-table-col"></div>' +
@@ -4409,11 +4350,16 @@ function renderMatelineMilestoneClusterBarChart() {
         return;
     }
 
-    var startEl = document.querySelector('.cm-filter-start-input');
-    var endEl = document.querySelector('.cm-filter-end-input');
-    var dateLabel = (startEl && startEl.value && endEl && endEl.value)
-        ? (startEl.value + ' - ' + endEl.value)
-        : 'Active Range';
+    var dateLabel = '';
+    if (window.cmSnapshotMode === 'd1') {
+        dateLabel = getMatelineMilestoneTargetDate();
+    } else {
+        var startEl = document.querySelector('.cm-filter-start-input');
+        var endEl = document.querySelector('.cm-filter-end-input');
+        dateLabel = (startEl && startEl.value && endEl && endEl.value)
+            ? (startEl.value + ' - ' + endEl.value)
+            : 'Active Range';
+    }
 
     var activeCluster = window.cmMilestoneClusterState.selectedCluster;
 
@@ -4653,43 +4599,43 @@ function renderMatelineMilestoneFmeSection(tickets) {
     var container = document.getElementById('matelineMilestoneFmeSection');
     if (!container) return;
 
-    if (Array.isArray(tickets)) {
-        // Agregasi per FME & Cluster
-        var fmeMap = {};
+    var ticketList = getMatelineMilestoneActiveTickets(tickets);
 
-        tickets.forEach(function (t) {
-            if (!t) return;
-            var cluster = String(t.fme_fm_office_name || t.fm_office || 'Unknown').trim() || 'Unknown';
-            var fmeName = String(t.fme_fullname || t.assign_to_fme || 'Unassigned').trim() || 'Unassigned';
-            var key = cluster + '___' + fmeName;
+    // Agregasi per FME & Cluster
+    var fmeMap = {};
 
-            if (!fmeMap[key]) {
-                fmeMap[key] = {
-                    cluster: cluster,
-                    fmeName: fmeName,
-                    accepted: 0,
-                    depart: 0,
-                    arrive: 0,
-                    leave: 0
-                };
-            }
+    ticketList.forEach(function (t) {
+        if (!t) return;
+        var cluster = String(t.fme_fm_office_name || t.fm_office || 'Unknown').trim() || 'Unknown';
+        var fmeName = String(t.fme_fullname || t.assign_to_fme || 'Unassigned').trim() || 'Unassigned';
+        var key = cluster + '___' + fmeName;
 
-            if (t.accept_time) fmeMap[key].accepted++;
-            if (t.depart_time) fmeMap[key].depart++;
-            if (t.arrive_time) fmeMap[key].arrive++;
-            if (t.complete_time || t.exit_time || t.current_phase === 'leave' || t.out_in === 'exit') {
-                fmeMap[key].leave++;
-            }
-        });
+        if (!fmeMap[key]) {
+            fmeMap[key] = {
+                cluster: cluster,
+                fmeName: fmeName,
+                accepted: 0,
+                depart: 0,
+                arrive: 0,
+                leave: 0
+            };
+        }
 
-        var fmeList = Object.keys(fmeMap).map(function (k) {
-            return fmeMap[k];
-        }).sort(function (a, b) {
-            return b.accepted - a.accepted;
-        });
+        if (t.accept_time) fmeMap[key].accepted++;
+        if (t.depart_time) fmeMap[key].depart++;
+        if (t.arrive_time) fmeMap[key].arrive++;
+        if (cmIsLeave(t)) {
+            fmeMap[key].leave++;
+        }
+    });
 
-        window.cmMilestoneFmeState.allRows = fmeList;
-    }
+    var fmeList = Object.keys(fmeMap).map(function (k) {
+        return fmeMap[k];
+    }).sort(function (a, b) {
+        return b.accepted - a.accepted;
+    });
+
+    window.cmMilestoneFmeState.allRows = fmeList;
 
     renderMatelineMilestoneFmeView();
 }
@@ -4724,11 +4670,16 @@ function renderMatelineMilestoneFmeView() {
             '</span>';
     }
 
+    var targetDate = getMatelineMilestoneTargetDate();
+    var fmeSubtitle = (window.cmSnapshotMode === 'd1')
+        ? (filteredRows.length + ' technicians (' + targetDate + ')')
+        : (filteredRows.length + ' technicians');
+
     var html =
         '<div class="custom-ml-fme-header">' +
             '<div class="custom-ml-fme-header-left">' +
                 '<div class="custom-ml-chart-title">FME Performance Detail</div>' +
-                '<div class="custom-ml-chart-subtitle">' + filteredRows.length + ' technicians</div>' +
+                '<div class="custom-ml-chart-subtitle">' + fmeSubtitle + '</div>' +
                 badgeHtml +
             '</div>' +
             '<div class="custom-ml-fme-header-right">' +
@@ -4829,7 +4780,7 @@ function openMatelineFmeModal(encodedCluster, encodedFmeName) {
     var cluster = decodeURIComponent(encodedCluster);
     var fmeName = decodeURIComponent(encodedFmeName);
 
-    var allTickets = window.cmDashboardState.allTickets || [];
+    var allTickets = getMatelineMilestoneActiveTickets();
     var matchedTickets = [];
 
     allTickets.forEach(function (t) {
@@ -4901,7 +4852,7 @@ function renderMatelineFmeModalContent() {
         if (t.accept_time) acceptedTickets.push(t);
         if (t.depart_time) departTickets.push(t);
         if (t.arrive_time) arriveTickets.push(t);
-        if (t.complete_time || t.exit_time || t.current_phase === 'leave' || t.out_in === 'exit') {
+        if (cmIsLeave(t)) {
             leaveTickets.push(t);
         }
     });
@@ -4977,6 +4928,9 @@ function renderMatelineFmeModalContent() {
     modal.innerHTML = html;
 }
 
+window.renderMatelineMilestoneAll = renderMatelineMilestoneAll;
+window.getMatelineMilestoneActiveTickets = getMatelineMilestoneActiveTickets;
+window.getMatelineMilestoneTargetDate = getMatelineMilestoneTargetDate;
 window.renderMatelineMilestoneClusterSection = renderMatelineMilestoneClusterSection;
 window.renderMatelineMilestoneClusterTable = renderMatelineMilestoneClusterTable;
 window.renderMatelineMilestoneClusterBarChart = renderMatelineMilestoneClusterBarChart;
@@ -4989,3 +4943,891 @@ window.openMatelineFmeModal = openMatelineFmeModal;
 window.closeMatelineFmeModal = closeMatelineFmeModal;
 window.setMatelineModalTab = setMatelineModalTab;
 window.handleMatelineModalBackdropClick = handleMatelineModalBackdropClick;
+
+/* ========================================================
+   FME Response & Arrival Performance Section Implementation
+   ======================================================== */
+function cmAddDays(s, n) {
+    if (!s) return '';
+    var p = String(s).split('-');
+    if (p.length < 3) return s;
+    var d = new Date(Date.UTC(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10)));
+    d.setUTCDate(d.getUTCDate() + n);
+    var y = d.getUTCFullYear();
+    var m = ('0' + (d.getUTCMonth() + 1)).slice(-2);
+    var da = ('0' + d.getUTCDate()).slice(-2);
+    return y + '-' + m + '-' + da;
+}
+
+function renderFmeResponseArrivalSection(tickets) {
+    var container = document.getElementById('cmFmeResponseArrivalSection');
+    if (!container) return;
+
+    if (!container.classList.contains('custom-filter-card')) {
+        container.classList.add('custom-filter-card');
+    }
+    container.style.backgroundColor = '#0d0d10';
+    container.style.borderColor = '#27272a';
+    container.style.borderRadius = '10px';
+    container.style.padding = '16px';
+    container.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.15)';
+    container.style.marginTop = '20px';
+    container.style.marginBottom = '24px';
+
+    if (typeof echarts === 'undefined') {
+        setTimeout(function () { renderFmeResponseArrivalSection(tickets); }, 500);
+        return;
+    }
+
+    var activeTickets = Array.isArray(tickets) ? tickets : (window.cmDashboardState.filtered || window.cmDashboardState.allTickets || []);
+
+    // 1. Tentukan date range aktif
+    var startEl = document.querySelector('.cm-filter-start-input');
+    var endEl = document.querySelector('.cm-filter-end-input');
+    var startInput = startEl ? startEl.value : '';
+    var endInput = endEl ? endEl.value : '';
+
+    if (!startInput || !endInput) {
+        var defaultRange = getCmDefaultDateRange();
+        startInput = startInput || defaultRange.start;
+        endInput = endInput || defaultRange.end;
+    }
+
+    // Bangun daftar tanggal urut
+    var dateList = [];
+    var cur = startInput;
+    var guard = 0;
+    while (cur <= endInput && guard < 400) {
+        dateList.push(cur);
+        cur = cmAddDays(cur, 1);
+        guard++;
+    }
+
+    // 2. Agregasi Harian (Daily Map)
+    var dailyMap = {};
+    for (var di = 0; di < dateList.length; di++) {
+        var dStr = dateList[di];
+        dailyMap[dStr] = {
+            total: 0,
+            accepted: 0,
+            arrived: 0,
+            activeFmes: {}
+        };
+    }
+
+    // 3. Agregasi Per Party
+    var partyMap = {
+        'Persada': { total: 0, accepted: 0, arrived: 0, activeFmes: {}, color: '#38bdf8' },
+        'Telkom Akses': { total: 0, accepted: 0, arrived: 0, activeFmes: {}, color: '#f87171' },
+        'Mandau': { total: 0, accepted: 0, arrived: 0, activeFmes: {}, color: '#34d399' }
+    };
+
+    for (var ti = 0; ti < activeTickets.length; ti++) {
+        var t = activeTickets[ti];
+        if (!t) continue;
+
+        var tDate = cmGetTicketDate(t);
+        var tParty = getTicketParty(t);
+        var fme = (t.assign_to_fme || '').trim();
+
+        if (dailyMap[tDate]) {
+            dailyMap[tDate].total++;
+            if (t.accept_time) dailyMap[tDate].accepted++;
+            if (t.arrive_time) dailyMap[tDate].arrived++;
+            if (fme) dailyMap[tDate].activeFmes[fme] = true;
+        }
+
+        if (partyMap[tParty]) {
+            partyMap[tParty].total++;
+            if (t.accept_time) partyMap[tParty].accepted++;
+            if (t.arrive_time) partyMap[tParty].arrived++;
+            if (fme) partyMap[tParty].activeFmes[fme] = true;
+        }
+    }
+
+    // Format series ECharts
+    var xDates = [];
+    var acceptRateData = [];
+    var arriveRateData = [];
+    var picData = [];
+
+    for (var k = 0; k < dateList.length; k++) {
+        var day = dateList[k];
+        var info = dailyMap[day];
+        var p = day.split('-');
+        var shortLabel = (p.length === 3) ? (p[2] + '/' + p[1]) : day;
+        xDates.push(shortLabel);
+
+        var accRate = info.total > 0 ? parseFloat(((info.accepted / info.total) * 100).toFixed(1)) : 0;
+        var arrRate = info.total > 0 ? parseFloat(((info.arrived / info.total) * 100).toFixed(1)) : 0;
+        var picCount = Object.keys(info.activeFmes).length;
+
+        acceptRateData.push(accRate);
+        arriveRateData.push(arrRate);
+        picData.push(picCount);
+    }
+
+    // Bangun HTML Section
+    var metaRange = formatIndonesianDateCm(startInput) + ' - ' + formatIndonesianDateCm(endInput);
+
+    var html =
+        // Header
+        '<div class="custom-fme-perf-header">' +
+        '  <div class="custom-fme-perf-title-group">' +
+        '    <div class="custom-fme-perf-title">' +
+        '      <span>FME Response &amp; Arrival Performance</span>' +
+        '      <span class="custom-fme-perf-title-tag">Corrective Maintenance</span>' +
+        '    </div>' +
+        '    <div class="custom-fme-perf-subtitle">Daily response rate (Accept) and on-site mobility (Arrive) monitoring by party across selected date range</div>' +
+        '  </div>' +
+        '  <div class="custom-fme-perf-meta">' +
+        '    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:2px;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>' +
+        '    <span>Active Range: ' + metaRange + '</span>' +
+        '  </div>' +
+        '</div>' +
+
+        // Row 1: Dual Trend Charts (Accept Rate & Arrive Rate)
+        '<div class="custom-fme-charts-row">' +
+        '  <div class="custom-fme-chart-card">' +
+        '    <div class="custom-fme-chart-header">' +
+        '      <span class="custom-fme-badge">Accept Rate</span>' +
+        '      <span class="custom-fme-target-pill"><span style="width:6px;height:6px;background:#ff7b72;border-radius:50%;display:inline-block;"></span>Target SLA &ge; 90%</span>' +
+        '    </div>' +
+        '    <div id="cmFmeAcceptRateTrendChart" class="custom-fme-chart-box"></div>' +
+        '  </div>' +
+        '  <div class="custom-fme-chart-card">' +
+        '    <div class="custom-fme-chart-header">' +
+        '      <span class="custom-fme-badge arrive">Arrive Rate</span>' +
+        '      <span class="custom-fme-target-pill"><span style="width:6px;height:6px;background:#ff7b72;border-radius:50%;display:inline-block;"></span>Target SLA &ge; 25%</span>' +
+        '    </div>' +
+        '    <div id="cmFmeArriveRateTrendChart" class="custom-fme-chart-box"></div>' +
+        '  </div>' +
+        '</div>' +
+
+        // Row 2: 3 Party Cards
+        '<div class="custom-fme-parties-row" id="cmFmePartiesRow"></div>';
+
+    container.innerHTML = html;
+
+    // Render Row 1: Charts
+    renderFmeTrendChart('cmFmeAcceptRateTrendChart', {
+        title: 'Accept Rate',
+        xDates: xDates,
+        rateData: acceptRateData,
+        picData: picData,
+        targetSla: 90,
+        rateColor: '#3b82f6',
+        areaStart: 'rgba(59, 130, 246, 0.22)',
+        areaEnd: 'rgba(59, 130, 246, 0.01)',
+        seriesName: '% WO Accept Rate_CM',
+        barName: 'Active PIC FME'
+    });
+
+    renderFmeTrendChart('cmFmeArriveRateTrendChart', {
+        title: 'Arrive Rate',
+        xDates: xDates,
+        rateData: arriveRateData,
+        picData: picData,
+        targetSla: 25,
+        rateColor: '#ec4899',
+        areaStart: 'rgba(236, 72, 153, 0.22)',
+        areaEnd: 'rgba(236, 72, 153, 0.01)',
+        seriesName: '% WO Arrive Rate_CM',
+        barName: 'Active PIC FME'
+    });
+
+    // Render Row 2: Party Cards
+    renderFmePartyCards(partyMap);
+}
+
+function renderFmeTrendChart(domId, cfg) {
+    var chartDom = document.getElementById(domId);
+    if (!chartDom) return;
+    var existing = echarts.getInstanceByDom(chartDom);
+    if (existing) existing.dispose();
+
+    var chart = echarts.init(chartDom);
+
+    var maxPic = 10;
+    for (var i = 0; i < cfg.picData.length; i++) {
+        if (cfg.picData[i] > maxPic) maxPic = cfg.picData[i];
+    }
+    var picYAxisMax = Math.ceil(maxPic * 2.2);
+
+    var option = {
+        backgroundColor: 'transparent',
+        textStyle: {
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        },
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: '#18181b',
+            borderColor: '#27272a',
+            borderWidth: 1,
+            textStyle: { color: '#fafafa', fontSize: 12 },
+            padding: [10, 14],
+            axisPointer: {
+                type: 'cross',
+                crossStyle: { color: '#71717a' },
+                lineStyle: { color: '#30363d', type: 'dashed' }
+            },
+            formatter: function (params) {
+                if (!params || !params.length) return '';
+                var res = '<div style="font-weight:700;color:#fafafa;margin-bottom:6px;border-bottom:1px solid #27272a;padding-bottom:4px;">Date: ' + params[0].axisValue + '</div>';
+                params.forEach(function (p) {
+                    var isPct = p.seriesName.indexOf('Rate') > -1;
+                    var valStr = isPct ? (p.value + '%') : (p.value + ' FME');
+                    res += '<div style="display:flex;justify-content:space-between;gap:16px;margin-top:3px;font-size:12px;">' +
+                        '<span>' + p.marker + ' ' + p.seriesName + ':</span>' +
+                        '<span style="font-weight:600;color:#fafafa;">' + valStr + '</span>' +
+                        '</div>';
+                });
+                return res;
+            }
+        },
+        legend: {
+            data: [cfg.seriesName, cfg.barName, 'Target SLA'],
+            bottom: 0,
+            textStyle: { color: '#8b949e', fontSize: 11 },
+            itemWidth: 14,
+            itemHeight: 8,
+            icon: 'roundRect'
+        },
+        grid: {
+            top: 25,
+            left: '3%',
+            right: '4%',
+            bottom: 40,
+            containLabel: true
+        },
+        xAxis: {
+            type: 'category',
+            data: cfg.xDates,
+            axisLine: { lineStyle: { color: '#30363d' } },
+            axisTick: { alignWithLabel: true },
+            axisLabel: {
+                color: '#8b949e',
+                fontSize: 10,
+                rotate: cfg.xDates.length > 15 ? 45 : 0
+            }
+        },
+        yAxis: [
+            {
+                type: 'value',
+                min: 0,
+                max: 100,
+                axisLabel: {
+                    color: '#8b949e',
+                    fontSize: 10,
+                    formatter: '{value}%'
+                },
+                axisLine: { show: false },
+                splitLine: { lineStyle: { color: '#27272a', type: 'dashed' } }
+            },
+            {
+                type: 'value',
+                min: 0,
+                max: picYAxisMax,
+                show: false,
+                splitLine: { show: false }
+            }
+        ],
+        series: [
+            {
+                name: cfg.barName,
+                type: 'bar',
+                yAxisIndex: 1,
+                data: cfg.picData,
+                barWidth: 12,
+                itemStyle: {
+                    color: '#f0883e',
+                    borderRadius: [3, 3, 0, 0]
+                },
+                label: {
+                    show: true,
+                    position: 'top',
+                    color: '#c9d1d9',
+                    fontSize: 9,
+                    fontWeight: 600,
+                    formatter: function (p) {
+                        return p.value > 0 ? p.value : '';
+                    }
+                }
+            },
+            {
+                name: cfg.seriesName,
+                type: 'line',
+                yAxisIndex: 0,
+                data: cfg.rateData,
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 6,
+                itemStyle: {
+                    color: cfg.rateColor,
+                    borderColor: '#0d0d10',
+                    borderWidth: 2
+                },
+                lineStyle: {
+                    width: 3,
+                    color: cfg.rateColor
+                },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: cfg.areaStart },
+                        { offset: 1, color: cfg.areaEnd }
+                    ])
+                },
+                markLine: {
+                    silent: true,
+                    symbol: 'none',
+                    lineStyle: {
+                        color: '#ef4444',
+                        type: 'dashed',
+                        width: 1.5
+                    },
+                    label: {
+                        formatter: cfg.targetSla + '%',
+                        position: 'insideEndTop',
+                        color: '#ff7b72',
+                        fontSize: 11,
+                        fontWeight: 700
+                    },
+                    data: [
+                        { yAxis: cfg.targetSla, name: 'Target SLA' }
+                    ]
+                }
+            }
+        ]
+    };
+
+    chart.setOption(option);
+    window.addEventListener('resize', function () {
+        chart.resize();
+    });
+}
+
+function renderFmePartyCards(partyMap) {
+    var container = document.getElementById('cmFmePartiesRow');
+    if (!container) return;
+
+    var partyList = (typeof CM_PARTY_ORDER !== 'undefined') ? CM_PARTY_ORDER : ['Telkom Akses', 'Persada', 'Mandau'];
+    var partyColors = {
+        'Telkom Akses': '#c8102e',
+        'Persada': '#31b5c6',
+        'Mandau': '#62b230'
+    };
+
+    var partyHtml = '';
+
+    partyList.forEach(function (pName) {
+        var info = partyMap[pName] || { total: 0, accepted: 0, arrived: 0, activeFmes: {} };
+        var activeFmeCount = Object.keys(info.activeFmes || {}).length;
+
+        var domAcceptId = 'cmFmePartyDonutAccept_' + pName.replace(/\s+/g, '');
+        var domArriveId = 'cmFmePartyDonutArrive_' + pName.replace(/\s+/g, '');
+
+        var pillColor = partyColors[pName] || '#58a6ff';
+
+        partyHtml += '<div class="custom-fme-party-card">' +
+            '  <div class="custom-fme-party-header">' +
+            '    <div class="custom-fme-party-name-group">' +
+            '      <span class="custom-fme-party-pill" style="background:' + pillColor + ';"></span>' +
+            '      <span class="custom-fme-party-name">' + pName + '</span>' +
+            '    </div>' +
+            '    <div class="custom-fme-party-meta">' +
+            '      <div>Total: <span class="custom-fme-party-meta-highlight">' + info.total.toLocaleString() + '</span> Tickets</div>' +
+            '      <div>Active: <span class="custom-fme-party-meta-highlight">' + activeFmeCount + '</span> FME</div>' +
+            '    </div>' +
+            '  </div>' +
+
+            '  <div class="custom-fme-party-donuts">' +
+            '    <div class="custom-fme-donut-col">' +
+            '      <div class="custom-fme-donut-title">Accept</div>' +
+            '      <div id="' + domAcceptId + '" class="custom-fme-donut-chart"></div>' +
+            '      <div class="custom-fme-donut-sub"><b>' + info.accepted.toLocaleString() + '</b> / ' + info.total.toLocaleString() + '</div>' +
+            '    </div>' +
+            '    <div class="custom-fme-donut-col">' +
+            '      <div class="custom-fme-donut-title arrive">Arrive</div>' +
+            '      <div id="' + domArriveId + '" class="custom-fme-donut-chart"></div>' +
+            '      <div class="custom-fme-donut-sub"><b>' + info.arrived.toLocaleString() + '</b> / ' + info.total.toLocaleString() + '</div>' +
+            '    </div>' +
+            '  </div>' +
+            '</div>';
+    });
+
+    container.innerHTML = partyHtml;
+
+    partyList.forEach(function (pName) {
+        var info = partyMap[pName] || { total: 0, accepted: 0, arrived: 0 };
+        var acceptRate = info.total > 0 ? parseFloat(((info.accepted / info.total) * 100).toFixed(1)) : 0;
+        var arriveRate = info.total > 0 ? parseFloat(((info.arrived / info.total) * 100).toFixed(1)) : 0;
+
+        var domAcceptId = 'cmFmePartyDonutAccept_' + pName.replace(/\s+/g, '');
+        var domArriveId = 'cmFmePartyDonutArrive_' + pName.replace(/\s+/g, '');
+
+        renderFmeDonutGauge(domAcceptId, acceptRate, '#3b82f6');
+        renderFmeDonutGauge(domArriveId, arriveRate, '#ec4899');
+    });
+}
+
+function renderFmeDonutGauge(domId, pct, color) {
+    var dom = document.getElementById(domId);
+    if (!dom) return;
+    var existing = echarts.getInstanceByDom(dom);
+    if (existing) existing.dispose();
+
+    var chart = echarts.init(dom);
+    var remaining = Math.max(0, 100 - pct);
+
+    var option = {
+        backgroundColor: 'transparent',
+        title: {
+            text: pct.toFixed(1) + '%',
+            left: 'center',
+            top: 'center',
+            textStyle: {
+                color: '#fafafa',
+                fontSize: 15,
+                fontWeight: 700,
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+            }
+        },
+        tooltip: {
+            show: true,
+            formatter: '{b}: {d}%',
+            backgroundColor: '#18181b',
+            borderColor: '#27272a',
+            textStyle: { color: '#fafafa', fontSize: 12 }
+        },
+        series: [
+            {
+                type: 'pie',
+                radius: ['68%', '88%'],
+                center: ['50%', '50%'],
+                avoidLabelOverlap: false,
+                silent: false,
+                label: { show: false },
+                labelLine: { show: false },
+                data: [
+                    {
+                        value: pct,
+                        name: 'Rate',
+                        itemStyle: {
+                            color: color,
+                            borderRadius: 4
+                        }
+                    },
+                    {
+                        value: remaining,
+                        name: 'Remaining',
+                        itemStyle: {
+                            color: 'rgba(255, 255, 255, 0.08)'
+                        },
+                        tooltip: { show: false }
+                    }
+                ]
+            }
+        ]
+    };
+
+    chart.setOption(option);
+    window.addEventListener('resize', function () {
+        chart.resize();
+    });
+}
+
+window.renderFmeResponseArrivalSection = renderFmeResponseArrivalSection;
+window.renderFmeTrendChart = renderFmeTrendChart;
+window.renderFmePartyCards = renderFmePartyCards;
+window.renderFmeDonutGauge = renderFmeDonutGauge;
+
+/* ========================================================
+   Morning Onsite Performance Section Implementation
+   ======================================================== */
+function renderCmMorningOnsiteSection(tickets) {
+    var container = document.getElementById('cmMorningOnsiteSection');
+    if (!container) return;
+
+    if (!container.classList.contains('custom-filter-card')) {
+        container.classList.add('custom-filter-card');
+    }
+    container.style.backgroundColor = '#0d0d10';
+    container.style.borderColor = '#27272a';
+    container.style.borderRadius = '10px';
+    container.style.padding = '16px';
+    container.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.15)';
+    container.style.marginTop = '20px';
+    container.style.marginBottom = '24px';
+
+    if (typeof echarts === 'undefined') {
+        setTimeout(function () { renderCmMorningOnsiteSection(tickets); }, 500);
+        return;
+    }
+
+    var activeTickets = Array.isArray(tickets) ? tickets : (window.cmDashboardState.filtered || window.cmDashboardState.allTickets || []);
+
+    // 1. Tentukan date range aktif
+    var startEl = document.querySelector('.cm-filter-start-input');
+    var endEl = document.querySelector('.cm-filter-end-input');
+    var startInput = startEl ? startEl.value : '';
+    var endInput = endEl ? endEl.value : '';
+
+    if (!startInput || !endInput) {
+        var defaultRange = getCmDefaultDateRange();
+        startInput = defaultRange.start;
+        endInput = defaultRange.end;
+    }
+
+    var dates = [];
+    var curr = startInput;
+    while (curr <= endInput && dates.length < 90) {
+        dates.push(curr);
+        curr = cmAddDays(curr, 1);
+    }
+
+    // 2. Inisialisasi vendor: Persada, Telkom Akses, Mandau
+    var vendorOrder = ['Persada', 'Telkom Akses', 'Mandau'];
+    var vendorDaily = {};
+    vendorOrder.forEach(function (v) {
+        vendorDaily[v] = {};
+        dates.forEach(function (d) {
+            vendorDaily[v][d] = { total: 0, pending: 0, accept: 0, depart: 0, arrive: 0, leave: 0 };
+        });
+    });
+
+    // 3. Akumulasi data aktual tiket murni tanpa fallback (Lifecycle Stage: mutually exclusive)
+    activeTickets.forEach(function (t) {
+        if (!t) return;
+        var p = getTicketParty(t);
+        if (!p || !vendorDaily[p]) return;
+
+        var tDate = cmGetTicketDate(t);
+        if (!tDate || !vendorDaily[p][tDate]) return;
+
+        var acc = !!t.accept_time;
+        var dep = !!t.depart_time;
+        var arr = !!t.arrive_time;
+        var lev = cmIsLeave(t);
+
+        var bucket = vendorDaily[p][tDate];
+        bucket.total++;
+        if (lev) {
+            bucket.leave++;
+        } else if (arr) {
+            bucket.arrive++;
+        } else if (dep) {
+            bucket.depart++;
+        } else if (acc) {
+            bucket.accept++;
+        } else {
+            bucket.pending++;
+        }
+    });
+
+    // 4. Hitung ringkasan total per vendor
+    var vendorTotals = {};
+    var allTotalSum = 0;
+    var allArrivedSum = 0;
+
+    vendorOrder.forEach(function (v) {
+        var tot = 0, pen = 0, acc = 0, dep = 0, arr = 0, lev = 0;
+        dates.forEach(function (d) {
+            var b = vendorDaily[v][d];
+            tot += b.total;
+            pen += b.pending;
+            acc += b.accept;
+            dep += b.depart;
+            arr += b.arrive;
+            lev += b.leave;
+        });
+        var arrivedCount = arr + lev;
+        var rate = tot > 0 ? Number(((arrivedCount / tot) * 100).toFixed(1)) : 0;
+        vendorTotals[v] = {
+            total: tot,
+            pending: pen,
+            accept: acc,
+            depart: dep,
+            arrive: arr,
+            leave: lev,
+            arrived: arrivedCount,
+            rate: rate
+        };
+        allTotalSum += tot;
+        allArrivedSum += arrivedCount;
+    });
+
+    var overallRate = allTotalSum > 0 ? Number(((allArrivedSum / allTotalSum) * 100).toFixed(1)) : 0;
+
+    // 5. Render HTML container Grid 2x2
+    container.innerHTML =
+        '<div class="custom-morning-onsite-header">' +
+        '   <div class="custom-morning-onsite-title">Morning Onsite Performance</div>' +
+        '   <div class="custom-morning-onsite-subtitle">Period: ' + startInput + ' - ' + endInput + ' | Total: ' + allTotalSum + ' | Arrived: ' + allArrivedSum + ' (' + overallRate + '%)</div>' +
+        '</div>' +
+        '<div class="custom-morning-onsite-grid">' +
+        '   <!-- Panel 1: Vendor Summary -->' +
+        '   <div class="custom-morning-onsite-card">' +
+        '       <div class="custom-morning-onsite-card-title">Vendor Summary - Lifecycle Stage & Onsite</div>' +
+        '       <div class="custom-morning-onsite-card-subtitle">Period: ' + startInput + ' - ' + endInput + ' | Total: ' + allTotalSum + ' | Arrived: ' + allArrivedSum + ' (' + overallRate + '%)</div>' +
+        '       <div id="cmMorningOnsiteSummaryChart" class="custom-morning-onsite-canvas"></div>' +
+        '   </div>' +
+        '   <!-- Panel 2: Persada -->' +
+        '   <div class="custom-morning-onsite-card">' +
+        '       <div class="custom-morning-onsite-card-title">Persada - Daily Lifecycle Stage & Onsite</div>' +
+        '       <div class="custom-morning-onsite-card-subtitle">Total: ' + vendorTotals['Persada'].total + ' | Arrived: ' + vendorTotals['Persada'].arrived + ' (' + vendorTotals['Persada'].rate + '%)</div>' +
+        '       <div id="cmMorningOnsitePersadaChart" class="custom-morning-onsite-canvas"></div>' +
+        '   </div>' +
+        '   <!-- Panel 3: Telkom Akses -->' +
+        '   <div class="custom-morning-onsite-card">' +
+        '       <div class="custom-morning-onsite-card-title">Telkom Akses - Daily Lifecycle Stage & Onsite</div>' +
+        '       <div class="custom-morning-onsite-card-subtitle">Total: ' + vendorTotals['Telkom Akses'].total + ' | Arrived: ' + vendorTotals['Telkom Akses'].arrived + ' (' + vendorTotals['Telkom Akses'].rate + '%)</div>' +
+        '       <div id="cmMorningOnsiteTelkomChart" class="custom-morning-onsite-canvas"></div>' +
+        '   </div>' +
+        '   <!-- Panel 4: Mandau -->' +
+        '   <div class="custom-morning-onsite-card">' +
+        '       <div class="custom-morning-onsite-card-title">Mandau - Daily Lifecycle Stage & Onsite</div>' +
+        '       <div class="custom-morning-onsite-card-subtitle">Total: ' + vendorTotals['Mandau'].total + ' | Arrived: ' + vendorTotals['Mandau'].arrived + ' (' + vendorTotals['Mandau'].rate + '%)</div>' +
+        '       <div id="cmMorningOnsiteMandauChart" class="custom-morning-onsite-canvas"></div>' +
+        '   </div>' +
+        '</div>';
+
+    // 6. Helper fungsi render grafik ECharts (100% Normalized Stacked Lifecycle Bar + Line Rate)
+    function renderOnsiteChart(domId, xData, rawData, isSummary) {
+        var dom = document.getElementById(domId);
+        if (!dom) return;
+
+        var existing = echarts.getInstanceByDom(dom);
+        if (existing) existing.dispose();
+
+        var pPendingData = [];
+        var pAcceptData = [];
+        var pDepartData = [];
+        var pArriveData = [];
+        var pLeaveData = [];
+        var arriveRateData = [];
+
+        for (var i = 0; i < xData.length; i++) {
+            var tot = rawData.total[i] || 0;
+            if (tot > 0) {
+                var pP = Number(((rawData.pending[i] / tot) * 100).toFixed(1));
+                var pA = Number(((rawData.accept[i] / tot) * 100).toFixed(1));
+                var pD = Number(((rawData.depart[i] / tot) * 100).toFixed(1));
+                var pArr = Number(((rawData.arrive[i] / tot) * 100).toFixed(1));
+                var pL = Number(Math.max(0, 100 - (pP + pA + pD + pArr)).toFixed(1));
+                var arrivedCount = (rawData.arrive[i] || 0) + (rawData.leave[i] || 0);
+                var aRate = Number(((arrivedCount / tot) * 100).toFixed(1));
+
+                pPendingData.push(pP);
+                pAcceptData.push(pA);
+                pDepartData.push(pD);
+                pArriveData.push(pArr);
+                pLeaveData.push(pL);
+                arriveRateData.push(aRate);
+            } else {
+                pPendingData.push(0);
+                pAcceptData.push(0);
+                pDepartData.push(0);
+                pArriveData.push(0);
+                pLeaveData.push(0);
+                arriveRateData.push(0);
+            }
+        }
+
+        function getBarLabel(color) {
+            return {
+                show: true,
+                position: 'top',
+                distance: 4,
+                color: color || '#a1a1aa',
+                fontSize: 9,
+                fontWeight: 'bold',
+                formatter: function (p) {
+                    return p.value >= 3 ? Math.round(p.value) + '%' : '';
+                }
+            };
+        }
+
+        var chart = echarts.init(dom);
+        var option = {
+            textStyle: {
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+            },
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: '#18181b',
+                borderColor: '#27272a',
+                borderWidth: 1,
+                textStyle: { color: '#fafafa', fontSize: 12 },
+                formatter: function (params) {
+                    var idx = params[0].dataIndex;
+                    var title = params[0].name;
+                    var tot = rawData.total[idx] || 0;
+                    var pen = rawData.pending[idx] || 0;
+                    var acc = rawData.accept[idx] || 0;
+                    var dep = rawData.depart[idx] || 0;
+                    var arr = rawData.arrive[idx] || 0;
+                    var lev = rawData.leave[idx] || 0;
+                    var arrived = arr + lev;
+                    var aRate = tot > 0 ? Number(((arrived / tot) * 100).toFixed(1)) : 0;
+                    var pP = tot > 0 ? Number(((pen / tot) * 100).toFixed(1)) : 0;
+                    var pA = tot > 0 ? Number(((acc / tot) * 100).toFixed(1)) : 0;
+                    var pD = tot > 0 ? Number(((dep / tot) * 100).toFixed(1)) : 0;
+                    var pArr = tot > 0 ? Number(((arr / tot) * 100).toFixed(1)) : 0;
+                    var pL = tot > 0 ? Number(((lev / tot) * 100).toFixed(1)) : 0;
+
+                    return '<div style="font-weight:700;margin-bottom:6px;border-bottom:1px solid #27272a;padding-bottom:4px;">' + title + '</div>' +
+                        '<div style="color:#ffffff;margin-bottom:4px;">Total Tickets: <b>' + tot + '</b></div>' +
+                        '<div style="color:#ef4444;margin-bottom:2px;">● Pending Accept: <b>' + pen + '</b> (' + pP + '%)</div>' +
+                        '<div style="color:#3b82f6;margin-bottom:2px;">● Accepted: <b>' + acc + '</b> (' + pA + '%)</div>' +
+                        '<div style="color:#f97316;margin-bottom:2px;">● Depart: <b>' + dep + '</b> (' + pD + '%)</div>' +
+                        '<div style="color:#ec4899;margin-bottom:2px;">● Arrive: <b>' + arr + '</b> (' + pArr + '%)</div>' +
+                        '<div style="color:#22c55e;margin-bottom:2px;">● Leave: <b>' + lev + '</b> (' + pL + '%)</div>' +
+                        '<div style="border-top:1px solid #27272a;margin-top:6px;padding-top:4px;">' +
+                        '  <span style="color:#38bdf8;font-weight:700;">Arrive Rate: <b>' + aRate + '%</b></span> (' + arrived + '/' + tot + ')' +
+                        '</div>';
+                }
+            },
+            legend: {
+                data: ['Accepted', 'Depart', 'Arrive', 'Leave', 'Arrive Rate'],
+                textStyle: { color: '#a1a1aa', fontSize: 11 },
+                top: 0,
+                right: 0
+            },
+            grid: {
+                top: 40,
+                left: 45,
+                right: 45,
+                bottom: dates.length > 7 && !isSummary ? 45 : 25,
+                containLabel: true
+            },
+            xAxis: {
+                type: 'category',
+                data: xData,
+                axisLine: { lineStyle: { color: '#27272a' } },
+                axisLabel: {
+                    color: '#a1a1aa',
+                    fontSize: 11,
+                    rotate: dates.length > 7 && !isSummary ? 35 : 0
+                }
+            },
+            yAxis: [
+                {
+                    type: 'value',
+                    name: 'Percentage',
+                    nameTextStyle: { color: '#71717a', fontSize: 10 },
+                    min: 0,
+                    max: 100,
+                    interval: 20,
+                    splitLine: { lineStyle: { color: '#27272a', type: 'dashed' } },
+                    axisLabel: {
+                        color: '#a1a1aa',
+                        fontSize: 11,
+                        formatter: '{value}%'
+                    }
+                }
+            ],
+            series: [
+                {
+                    name: 'Accepted',
+                    type: 'bar',
+                    data: pAcceptData,
+                    barMaxWidth: 18,
+                    itemStyle: { color: '#3b82f6', borderRadius: [3, 3, 0, 0] },
+                    label: getBarLabel('#3b82f6')
+                },
+                {
+                    name: 'Depart',
+                    type: 'bar',
+                    data: pDepartData,
+                    barMaxWidth: 18,
+                    itemStyle: { color: '#f97316', borderRadius: [3, 3, 0, 0] },
+                    label: getBarLabel('#f97316')
+                },
+                {
+                    name: 'Arrive',
+                    type: 'bar',
+                    data: pArriveData,
+                    barMaxWidth: 18,
+                    itemStyle: { color: '#ec4899', borderRadius: [3, 3, 0, 0] },
+                    label: getBarLabel('#ec4899')
+                },
+                {
+                    name: 'Leave',
+                    type: 'bar',
+                    data: pLeaveData,
+                    barMaxWidth: 18,
+                    itemStyle: { color: '#22c55e', borderRadius: [3, 3, 0, 0] },
+                    label: getBarLabel('#22c55e')
+                },
+                {
+                    name: 'Arrive Rate',
+                    type: 'line',
+                    data: arriveRateData,
+                    symbol: 'circle',
+                    symbolSize: 6,
+                    z: 10,
+                    itemStyle: { color: '#38bdf8' },
+                    lineStyle: { width: 2.5, color: '#38bdf8' },
+                    label: {
+                        show: true,
+                        position: 'top',
+                        distance: 5,
+                        color: '#38bdf8',
+                        fontSize: 10,
+                        fontWeight: 'bold',
+                        formatter: function (p) {
+                            return p.value > 0 ? (p.value + '%') : '';
+                        }
+                    }
+                }
+            ]
+        };
+
+        chart.setOption(option);
+        window.addEventListener('resize', function () {
+            chart.resize();
+        });
+    }
+
+    // 7. Render Panel 1: Vendor Summary (100% Normalized Lifecycle)
+    var summaryRawData = {
+        total: vendorOrder.map(function (v) { return vendorTotals[v].total; }),
+        pending: vendorOrder.map(function (v) { return vendorTotals[v].pending; }),
+        accept: vendorOrder.map(function (v) { return vendorTotals[v].accept; }),
+        depart: vendorOrder.map(function (v) { return vendorTotals[v].depart; }),
+        arrive: vendorOrder.map(function (v) { return vendorTotals[v].arrive; }),
+        leave: vendorOrder.map(function (v) { return vendorTotals[v].leave; })
+    };
+
+    renderOnsiteChart(
+        'cmMorningOnsiteSummaryChart',
+        vendorOrder,
+        summaryRawData,
+        true
+    );
+
+    // 8. Render Panel 2, 3, 4: Daily Trend per Vendor (100% Normalized Lifecycle)
+    vendorOrder.forEach(function (v) {
+        var targetDomId = v === 'Persada'
+            ? 'cmMorningOnsitePersadaChart'
+            : (v === 'Telkom Akses' ? 'cmMorningOnsiteTelkomChart' : 'cmMorningOnsiteMandauChart');
+
+        var dailyRawData = {
+            total: dates.map(function (d) { return vendorDaily[v][d].total; }),
+            pending: dates.map(function (d) { return vendorDaily[v][d].pending; }),
+            accept: dates.map(function (d) { return vendorDaily[v][d].accept; }),
+            depart: dates.map(function (d) { return vendorDaily[v][d].depart; }),
+            arrive: dates.map(function (d) { return vendorDaily[v][d].arrive; }),
+            leave: dates.map(function (d) { return vendorDaily[v][d].leave; })
+        };
+
+        renderOnsiteChart(
+            targetDomId,
+            dates,
+            dailyRawData,
+            false
+        );
+    });
+}
+
+window.renderCmMorningOnsiteSection = renderCmMorningOnsiteSection;

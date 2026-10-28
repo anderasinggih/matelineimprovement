@@ -323,8 +323,8 @@ if (isNaN(dataStart) || dataStart < 0) {
 if (isNaN(dataLimit) || dataLimit <= 0) {
     dataLimit = 20;
 }
-if (dataLimit > 10000) {
-    dataLimit = 10000;
+if (dataLimit > 50000) {
+    dataLimit = 50000;
 }
 if (region.toUpperCase() === "ALL" || region.toUpperCase() === "ALL REGION") {
     region = "";
@@ -616,6 +616,7 @@ alldataGridTql = "select " +
     "fs.fullname as fme_fullname, " +
     "fs.contractor as contractor_id, " +
     "cc.contractor_name, " +
+    "cc.contractor_name as party_name, " +
     "fo.fm_office_name as fme_fm_office_name " +
     "from " + modelUri + " cm " +
     "left join " + fmeScheduleUri + " fs " +
@@ -643,8 +644,10 @@ acceptRateDailyTql =
     "count_ticket_id, " +
     "count_dispatch_time, " +
     "count_accept_time, " +
+    "count_arrive_time, " +
     "count_close_time, " +
-    "round(100.0 * count_accept_time / nullif(count_ticket_id, 0), 2) as accept_rate_pct " +
+    "round(100.0 * count_accept_time / nullif(count_ticket_id, 0), 2) as accept_rate_pct, " +
+    "round(100.0 * count_arrive_time / nullif(count_ticket_id, 0), 2) as arrive_rate_pct " +
     "from ( " +
     "select " +
     "substring(cm.keycode, 4, 8) as ticket_date, " +
@@ -657,6 +660,7 @@ acceptRateDailyTql =
     "count(cm.keycode) as count_ticket_id, " +
     "sum(case when cm.dispatch_time is not null then 1 else 0 end) as count_dispatch_time, " +
     "sum(case when cm.accept_time is not null then 1 else 0 end) as count_accept_time, " +
+    "sum(case when cm.arrive_time is not null then 1 else 0 end) as count_arrive_time, " +
     "sum(case when cm.closetime is not null then 1 else 0 end) as count_close_time " +
     "from " + modelUri + " cm " +
     "left join " + fmeScheduleUri + " fs " +
@@ -682,8 +686,10 @@ acceptRateWeeklyTql =
     "count_ticket_id, " +
     "count_dispatch_time, " +
     "count_accept_time, " +
+    "count_arrive_time, " +
     "count_close_time, " +
-    "round(100.0 * count_accept_time / nullif(count_ticket_id, 0), 2) as accept_rate_pct " +
+    "round(100.0 * count_accept_time / nullif(count_ticket_id, 0), 2) as accept_rate_pct, " +
+    "round(100.0 * count_arrive_time / nullif(count_ticket_id, 0), 2) as arrive_rate_pct " +
     "from ( " +
     "select " +
     "substring(cm.keycode, 4, 8) as create_date, " +
@@ -696,6 +702,7 @@ acceptRateWeeklyTql =
     "count(cm.keycode) as count_ticket_id, " +
     "sum(case when cm.dispatch_time is not null then 1 else 0 end) as count_dispatch_time, " +
     "sum(case when cm.accept_time is not null then 1 else 0 end) as count_accept_time, " +
+    "sum(case when cm.arrive_time is not null then 1 else 0 end) as count_arrive_time, " +
     "sum(case when cm.closetime is not null then 1 else 0 end) as count_close_time " +
     "from " + modelUri + " cm " +
     "left join " + fmeScheduleUri + " fs " +
@@ -858,11 +865,36 @@ try {
     }
     try {
         dataGridTotalRows = queryByTql(dataGridTotalTql, parameters, 0, 1);
+        dataGridTotalRow = (dataGridTotalRows && dataGridTotalRows.length > 0) ? dataGridTotalRows[0] : {};
+        dataGridTotal = toNumber(dataGridTotalRow.total);
     } catch (e) {
         throw new Error("dataGridTotalTql failed: " + e.message);
     }
     try {
-        alldataGridRows = queryByTql(alldataGridTql, parameters, dataStart, dataLimit);
+        var chunkSize = 5000;
+        var firstBatchLimit = Math.min(chunkSize, dataLimit);
+        alldataGridRows = queryByTql(alldataGridTql, parameters, dataStart, firstBatchLimit);
+        if (!alldataGridRows) {
+            alldataGridRows = [];
+        }
+
+        // Auto-pagination / chunking: OWS queryByTql membatasi maks 5000 row per request.
+        // Jika data melebihi 5000, lakukan loop pagination otomatis sampai seluruh data terambil.
+        var maxTarget = (dataGridTotal > 0 && dataGridTotal < dataLimit) ? dataGridTotal : dataLimit;
+        var currentOffset = dataStart + alldataGridRows.length;
+
+        while (alldataGridRows.length < maxTarget && currentOffset < dataGridTotal) {
+            var nextLimit = Math.min(chunkSize, maxTarget - alldataGridRows.length);
+            var nextBatch = queryByTql(alldataGridTql, parameters, currentOffset, nextLimit);
+            if (!nextBatch || nextBatch.length === 0) {
+                break;
+            }
+            alldataGridRows = alldataGridRows.concat(nextBatch);
+            currentOffset += nextBatch.length;
+            if (nextBatch.length < nextLimit) {
+                break;
+            }
+        }
     } catch (e) {
         throw new Error("alldataGridTql failed: " + e.message);
     }
@@ -987,8 +1019,10 @@ for (i = 0; acceptRateDailyRows && i < acceptRateDailyRows.length; i++) {
         count_ticket_id: toNumber(row.count_ticket_id),
         count_dispatch_time: toNumber(row.count_dispatch_time),
         count_accept_time: toNumber(row.count_accept_time),
+        count_arrive_time: toNumber(row.count_arrive_time),
         count_close_time: toNumber(row.count_close_time),
-        accept_rate_pct: toNumber(row.accept_rate_pct)
+        accept_rate_pct: toNumber(row.accept_rate_pct),
+        arrive_rate_pct: toNumber(row.arrive_rate_pct)
     });
 }
 
