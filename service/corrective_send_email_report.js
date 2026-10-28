@@ -923,7 +923,7 @@ function buildHeaderSection(targetDate, startDateRange, endDateRange, nowTimeStr
     return '<tr><td style="padding-bottom:18px; border-bottom:1px solid ' + C.border + ';">' +
         '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
         '<td align="left" valign="top">' +
-        '<div style="font-size:24px; font-weight:700; color:' + C.text + ';">MATELINE UTILIZATION DASHBOARD &ndash; PERSADA</div>' +
+        '<div style="font-size:24px; font-weight:700; color:' + C.text + ';">MATELINE UTILIZATION DASHBOARD – PERSADA</div>' +
         '<div style="font-size:14px; color:' + C.sub + '; margin-top:6px;">Daily Mateline utilization and ticket acceptance monitoring (Persada)</div>' +
         '</td>' +
         '<td align="right" valign="top" style="white-space:nowrap;">' +
@@ -997,12 +997,12 @@ function buildFmeResponseSection(startDateRange, endDateRange, fmePerfParty, fme
 
     var headerHtml = '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;"><tr>' +
         '<td align="left" valign="top">' +
-        '  <span style="font-size:14px; font-weight:700; color:#fafafa;">FME Response & Arrival Performance &ndash; Persada</span>' +
+        '  <span style="font-size:14px; font-weight:700; color:#fafafa;">FME Response & Arrival Performance – Persada</span>' +
         '  <span style="display:inline-block; font-size:9px; font-weight:700; color:#a1a1aa; background:#18181b; border:1px solid #27272a; border-radius:4px; padding:2px 6px; margin-left:8px; vertical-align:middle; letter-spacing:0.5px;">CORRECTIVE MAINTENANCE</span>' +
         '  <div style="font-size:11px; color:#8b949e; margin-top:4px;">Daily response rate (Accept) and on-site mobility (Arrive) monitoring for Persada across selected date range</div>' +
         '</td>' +
         '<td align="right" valign="top">' +
-        '  <span style="display:inline-block; font-size:11px; font-weight:600; color:#a1a1aa; background:#18181b; border:1px solid #27272a; border-radius:6px; padding:5px 12px;">Active Range: <span style="color:#fafafa;">' + esc(longDateId(startDateRange)) + ' &ndash; ' + esc(longDateId(endDateRange)) + '</span></span>' +
+        '  <span style="display:inline-block; font-size:11px; font-weight:600; color:#a1a1aa; background:#18181b; border:1px solid #27272a; border-radius:6px; padding:5px 12px;">Active Range: <span style="color:#fafafa;">' + esc(longDateId(startDateRange)) + ' – ' + esc(longDateId(endDateRange)) + '</span></span>' +
         '</td></tr></table>';
 
     return '<tr><td>' + cardBox(
@@ -1029,15 +1029,15 @@ function buildMorningOnsiteSection(startDateRange, endDateRange, onsitePersadaUr
         dateMatrixHead('Vendor', trendDates, 'Grand Total') + '</thead><tbody>' + onsiteDailyRows + '</tbody></table>';
 
     return '<tr><td>' + cardBox(
-        cardHeader('Morning Onsite Performance &ndash; Persada', 'Period: ' + startDateRange + ' - ' + endDateRange + ' | Total: ' + persadaSummary.total + ' | Arrived: ' + persadaSummary.arrived + ' (' + persadaSummary.rate.toFixed(1) + '%)') +
+        cardHeader('Morning Onsite Performance – Persada', 'Period: ' + startDateRange + ' - ' + endDateRange + ' | Total: ' + persadaSummary.total + ' | Arrived: ' + persadaSummary.arrived + ' (' + persadaSummary.rate.toFixed(1) + '%)') +
         imgTag(onsitePersadaUrl, 880, 280, 'Persada Daily Trend') +
-        '<div style="font-size:12px; font-weight:700; color:' + C.text + '; margin:18px 0 6px 0;">Daily Arrive Rate Trend &ndash; Persada</div>' +
+        '<div style="font-size:12px; font-weight:700; color:' + C.text + '; margin:18px 0 6px 0;">Daily Arrive Rate Trend – Persada</div>' +
         onsiteDailyTable) + '</td></tr>' + spacer(24);
 }
 
 function buildMilestoneCardsSection(ms, targetDate) {
     var titleDate = targetDate ? ' (' + targetDate + ')' : '';
-    return '<tr><td style="font-size:14px; font-weight:700; color:' + C.text + '; letter-spacing:0.5px; padding-bottom:12px;">MILESTONE UTILIZATION DASHBOARD &ndash; PERSADA' + titleDate + '</td></tr>' +
+    return '<tr><td style="font-size:14px; font-weight:700; color:' + C.text + '; letter-spacing:0.5px; padding-bottom:12px;">MILESTONE UTILIZATION DASHBOARD – PERSADA' + titleDate + '</td></tr>' +
         '<tr><td><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
         milestoneCardCell('Total Ticket' + titleDate, ms.total, null, C.text, '', '') + '<td width="1%">&nbsp;</td>' +
         milestoneCardCell('Total Accepted', ms.accepted, Math.round(ms.total > 0 ? ms.accepted / ms.total * 100 : 0), '#58a6ff', 'rgba(88,166,255,0.12)', 'rgba(88,166,255,0.3)') + '<td width="1%">&nbsp;</td>' +
@@ -1091,7 +1091,7 @@ function buildRangeTimelineSection(startDateRange, endDateRange, rangeUrl, trend
         '</tbody></table>';
 
     return '<tr><td>' + cardBox(
-        cardHeader('Date Range Timeline &ndash; Persada (' + startDateRange + ' - ' + endDateRange + ')', trendDates.length + ' days in range') +
+        cardHeader('Date Range Timeline – Persada (' + startDateRange + ' - ' + endDateRange + ')', trendDates.length + ' days in range') +
         imgTag(rangeUrl, CHART_W, 340, 'Date Range Timeline') + rangeTable) + '</td></tr>' + spacer(20);
 }
 
@@ -1128,7 +1128,7 @@ function buildClusterSection(clusterList, targetDate, clusterChartUrl) {
         '</div>';
 
     return '<tr><td>' + cardBox(
-        cardHeader('Cluster Office Milestone Summary &ndash; Persada', subText) +
+        cardHeader('Cluster Office Milestone Summary – Persada', subText) +
         '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
         '<td width="49%" valign="top">' + tableHtml + '</td>' +
         '<td width="2%">&nbsp;</td>' +
@@ -1149,7 +1149,7 @@ function buildFmeDetailSection(fmeList, targetDate) {
     }
     var subText = fmeList.length + ' technicians' + (targetDate ? ' (' + targetDate + ')' : '');
     return '<tr><td>' + cardBox(
-        cardHeader('FME Performance Detail &ndash; Persada', subText) +
+        cardHeader('FME Performance Detail – Persada', subText) +
         '<table class="fme" width="100%" cellpadding="0" cellspacing="0" border="0"><thead><tr>' +
         '<th align="left">Cluster</th><th align="left">FME Name</th><th class="r" style="color:' + C.blue + ';">Accepted</th><th class="r" style="color:' + C.orange + ';">Depart</th>' +
         '<th class="r" style="color:' + C.pink + ';">Arrive</th><th class="r" style="color:' + C.green + ';">Leave</th>' +
@@ -1197,7 +1197,7 @@ var html = [
     buildDocHead(nowTimeStr, runId),
     buildHeaderSection(targetDate, startDateRange, endDateRange, nowTimeStr),
     buildFmeResponseSection(startDateRange, endDateRange, fmePerfParty, fmeAcceptChartUrl, fmeArriveChartUrl),
-    buildMorningOnsiteSection(startDateRange, endDateRange, onsitePersadaUrl, trendDates, onsiteVendorDaily, onsiteVendorSummary),
+    // buildMorningOnsiteSection(startDateRange, endDateRange, onsitePersadaUrl, trendDates, onsiteVendorDaily, onsiteVendorSummary), // Dihilangkan sementara sesuai permintaan user (siap di-uncomment jika ingin rollback)
     buildMilestoneCardsSection(ms, targetDate),
     buildRangeTimelineSection(startDateRange, endDateRange, rangeUrl, trendDates, rangeMap),
     buildClusterSection(clusterList, targetDate, clusterChartUrl),
